@@ -1,0 +1,47 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.app__header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #2a3038;
+  background: #0e1014;
+}
+
+.app__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.app__subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #8b95a5;
+}
+
+.app__code {
+  font-size: 12px;
+  padding: 2px 6px;
+  background: #1e2229;
+  border-radius: 4px;
+  color: #b8c4d4;
+}
+
+.app__main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__viewer-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

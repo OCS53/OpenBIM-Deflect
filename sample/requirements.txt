@@ -1,0 +1,2 @@
+# 샘플 IFC 생성 스크립트 전용 (루트에서: python -m venv .venv && .venv/bin/pip install -r sample/requirements.txt)
+ifcopenshell>=0.7.0,<0.9

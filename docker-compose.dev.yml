@@ -1,0 +1,25 @@
+# 로컬 개발: 소스 마운트 + uvicorn --reload
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build api redis worker
+
+services:
+  api:
+    volumes:
+      - ./backend:/work/backend
+      - ./scripts:/work/scripts
+      - ./sample:/work/sample
+      - api_job_data:/work/backend/data
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --reload
+
+  worker:
+    volumes:
+      - ./backend:/work/backend
+      - ./scripts:/work/scripts
+      - ./sample:/work/sample
+      - api_job_data:/work/backend/data

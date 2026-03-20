@@ -1,0 +1,20 @@
+.venv/
+node_modules/
+frontend/dist/
+
+__pycache__/
+*.py[cod]
+.Python
+
+# 스파이크 파이프라인 산출물
+scripts/spike/_output/
+
+# API job 산출물 (로컬 실행 시)
+backend/data/
+
+# web-ifc WASM (npm postinstall에서 node_modules에서 복사)
+frontend/public/wasm/
+
+# Vite 로컬 환경 변수
+frontend/.env
+frontend/.env.local

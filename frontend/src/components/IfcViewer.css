@@ -1,0 +1,55 @@
+.ifc-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ifc-viewer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #12151a;
+  border-bottom: 1px solid #2a3038;
+  font-size: 13px;
+}
+
+.ifc-viewer__status {
+  color: #c4cad4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ifc-viewer__file {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: #2d6cdf;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.ifc-viewer__file input {
+  display: none;
+}
+
+.ifc-viewer__file--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ifc-viewer__canvas-host {
+  flex: 1;
+  min-height: 360px;
+  position: relative;
+}
+
+.ifc-viewer__canvas-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

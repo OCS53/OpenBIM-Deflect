@@ -1,0 +1,892 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpenBIM-Deflect API",
+    "description": "IFC 업로드 후 스파이크 파이프라인(IFC→Gmsh→CalculiX) 실행",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/analyze": {
+      "post": {
+        "summary": "Analyze Ifc",
+        "operationId": "analyze_ifc_api_v1_analyze_post",
+        "parameters": [
+          {
+            "name": "mesh_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 120.0,
+              "title": "Mesh Size"
+            }
+          },
+          {
+            "name": "young",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 210000.0,
+              "title": "Young"
+            }
+          },
+          {
+            "name": "poisson",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0.3,
+              "title": "Poisson"
+            }
+          },
+          {
+            "name": "load_z",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 10000.0,
+              "title": "Load Z"
+            }
+          },
+          {
+            "name": "run_ccx",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Run Ccx"
+            }
+          },
+          {
+            "name": "geometry_strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "auto",
+                "stl_classify",
+                "stl_raw",
+                "occ_bbox"
+              ],
+              "type": "string",
+              "default": "auto",
+              "title": "Geometry Strategy"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_ifc_api_v1_analyze_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}/artifacts/{filename}": {
+      "get": {
+        "summary": "Download Artifact",
+        "operationId": "download_artifact_api_v1_jobs__job_id__artifacts__filename__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "post": {
+        "summary": "Create Pipeline Job",
+        "operationId": "create_pipeline_job_api_v1_jobs_post",
+        "parameters": [
+          {
+            "name": "mesh_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 120.0,
+              "title": "Mesh Size"
+            }
+          },
+          {
+            "name": "young",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 210000.0,
+              "title": "Young"
+            }
+          },
+          {
+            "name": "poisson",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 0.3,
+              "title": "Poisson"
+            }
+          },
+          {
+            "name": "load_z",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 10000.0,
+              "title": "Load Z"
+            }
+          },
+          {
+            "name": "run_ccx",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Run Ccx"
+            }
+          },
+          {
+            "name": "geometry_strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "auto",
+                "stl_classify",
+                "stl_raw",
+                "occ_bbox"
+              ],
+              "type": "string",
+              "default": "auto",
+              "title": "Geometry Strategy"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_pipeline_job_api_v1_jobs_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreatedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Job Status",
+        "operationId": "get_job_status_api_v1_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalyzeResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "completed",
+            "title": "Status",
+            "default": "completed"
+          },
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactInfo"
+            },
+            "type": "array",
+            "title": "Artifacts"
+          },
+          "pipeline_report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Report",
+            "description": "pipeline_report.json 내용 (Gmsh 전략·geometry_strategy 등)"
+          },
+          "fe_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeResultsPayload"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FRD 기반 변위·응력 요약 (fe_results.json)"
+          },
+          "log_tail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Tail",
+            "description": "파이프라인 표준출력 마지막 일부 (디버그용)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "artifacts"
+        ],
+        "title": "AnalyzeResponse"
+      },
+      "ArtifactInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "바이트 크기"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "GET으로 내려받을 경로 (호스트 기준)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "size_bytes",
+          "url"
+        ],
+        "title": "ArtifactInfo"
+      },
+      "Body_analyze_ifc_api_v1_analyze_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "IFC SPF (.ifc)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_analyze_ifc_api_v1_analyze_post"
+      },
+      "Body_create_pipeline_job_api_v1_jobs_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "IFC SPF (.ifc)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_pipeline_job_api_v1_jobs_post"
+      },
+      "FeDisplacementBlock": {
+        "properties": {
+          "node_id": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Node Id"
+          },
+          "ux": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Ux"
+          },
+          "uy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Uy"
+          },
+          "uz": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Uz"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "ux",
+          "uy",
+          "uz"
+        ],
+        "title": "FeDisplacementBlock"
+      },
+      "FeResultsMagnitude": {
+        "properties": {
+          "max_abs_displacement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Abs Displacement"
+          },
+          "max_von_mises": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Von Mises"
+          }
+        },
+        "type": "object",
+        "title": "FeResultsMagnitude"
+      },
+      "FeResultsPayload": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "calculix_frd"
+          },
+          "frd_basename": {
+            "type": "string",
+            "title": "Frd Basename",
+            "default": ""
+          },
+          "parse_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parse Error"
+          },
+          "n_nodes_total_disp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes Total Disp"
+          },
+          "n_nodes_total_stress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes Total Stress"
+          },
+          "n_nodes_in_sample": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes In Sample"
+          },
+          "downsample_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downsample Note"
+          },
+          "displacement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeDisplacementBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeStressBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeResultsMagnitude"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "FeResultsPayload",
+        "description": "`model_from_pipeline.frd` 에서 추출·다운샘플한 필드 (`fe_results.json` 과 동일 구조)."
+      },
+      "FeStressBlock": {
+        "properties": {
+          "node_id": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Node Id"
+          },
+          "sxx": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Sxx"
+          },
+          "syy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Syy"
+          },
+          "szz": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Szz"
+          },
+          "sxy": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Sxy"
+          },
+          "syz": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Syz"
+          },
+          "szx": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Szx"
+          },
+          "von_mises": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Von Mises"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "sxx",
+          "syy",
+          "szz",
+          "sxy",
+          "syz",
+          "szx",
+          "von_mises"
+        ],
+        "title": "FeStressBlock"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JobCreatedResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status",
+            "default": "pending"
+          },
+          "poll_url": {
+            "type": "string",
+            "title": "Poll Url",
+            "description": "진행 상태·결과 조회용 GET 경로 (동일 호스트 기준)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "poll_url"
+        ],
+        "title": "JobCreatedResponse"
+      },
+      "JobErrorDetail": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "log_tail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Tail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "JobErrorDetail"
+      },
+      "JobStatusResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "artifacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ArtifactInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifacts",
+            "description": "status가 completed일 때만 채워짐"
+          },
+          "pipeline_report": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Report",
+            "description": "완료 시 pipeline_report.json (실패·대기 중에는 None일 수 있음)"
+          },
+          "fe_results": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeResultsPayload"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "완료 시 FRD 기반 변위·응력 요약 (fe_results.json)"
+          },
+          "log_tail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Tail",
+            "description": "마지막 표준출력 일부"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "실패 시 사유"
+          },
+          "celery_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celery Task Id",
+            "description": "실행 중인 경우 Celery task id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "JobStatusResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
