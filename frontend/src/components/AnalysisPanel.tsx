@@ -17,6 +17,7 @@ import type {
   PipelineQueryParams,
 } from '../api/types'
 import { feResultsAtLoadStep } from '../analysis/feResultsView'
+import { hasFePointCloudData } from '../analysis/feResultsOverlayThree'
 import {
   AnalysisSpecForm,
   analysisInputV1FromForm,
@@ -24,7 +25,6 @@ import {
   type AnalysisSpecFormModel,
 } from './AnalysisSpecForm'
 import { defaultApiBase } from '../config'
-import { FeResultsVtkView } from './FeResultsVtkView'
 import './AnalysisPanel.css'
 
 /** 구조화 스펙: 폼(행 편집) 또는 원시 JSON */
@@ -74,9 +74,11 @@ export interface AnalysisResultState {
 
 interface AnalysisPanelProps {
   ifcFile: File | null
+  /** 선택 스텝이 반영된 fe_results — IFC 뷰어에 포인트 오버랩 */
+  onFeResultsOverlay?: (fe: FeResultsPayload | null) => void
 }
 
-export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
+export function AnalysisPanel({ ifcFile, onFeResultsOverlay }: AnalysisPanelProps) {
   const envBase = useMemo(() => defaultApiBase(), [])
   const [baseOverride, setBaseOverride] = useState('')
   const apiBase = (baseOverride.trim() || envBase).replace(/\/$/, '')
@@ -87,9 +89,11 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
   const [loadPreset, setLoadPreset] = useState<LoadCasePreset>('ifc_default')
   const [loadN, setLoadN] = useState(10_000)
   const [firstProductOnly, setFirstProductOnly] = useState(false)
+  const [partitionIfcElsets, setPartitionIfcElsets] = useState(false)
   const [meshSize, setMeshSize] = useState(0.25)
   const [young, setYoung] = useState(210_000)
   const [poisson, setPoisson] = useState(0.3)
+  const [densityKgM3, setDensityKgM3] = useState(7850)
   const [analysisSpecMode, setAnalysisSpecMode] = useState<AnalysisSpecInputMode>('none')
   const [analysisSpecForm, setAnalysisSpecForm] = useState<AnalysisSpecFormModel>(() =>
     defaultAnalysisSpecFormModel(),
@@ -126,11 +130,13 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
       mesh_size: meshSize,
       young,
       poisson,
+      density_kg_m3: densityKgM3,
       load_z: loadN,
       geometry_strategy: geomStrategy,
       run_ccx: runCcx,
       boundary_mode: boundaryModeFromPreset(loadPreset),
       first_product_only: firstProductOnly,
+      partition_ifc_elsets: partitionIfcElsets,
       analysis_spec: effectiveAnalysisSpecString,
     }),
     [
@@ -139,9 +145,11 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
       meshSize,
       young,
       poisson,
+      densityKgM3,
       loadN,
       loadPreset,
       firstProductOnly,
+      partitionIfcElsets,
       effectiveAnalysisSpecString,
     ],
   )
@@ -150,6 +158,17 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
     () => feResultsAtLoadStep(result?.feResults ?? null, selectedFeStepIndex),
     [result?.feResults, selectedFeStepIndex],
   )
+
+  useEffect(() => {
+    const ok = hasFePointCloudData(feResultsView)
+    onFeResultsOverlay?.(ok ? feResultsView : null)
+  }, [feResultsView, onFeResultsOverlay])
+
+  const meshNodeIdSample = useMemo(() => {
+    const ids = feResultsView?.displacement?.node_id
+    if (!ids?.length) return null
+    return ids
+  }, [feResultsView?.displacement?.node_id])
 
   const lastFeJobIdRef = useRef<string | null>(null)
   useEffect(() => {
@@ -448,6 +467,14 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
             />
             단일 부재만 (첫 구조 요소) — 복합 모델 대신 단일 보·기둥 검증용
           </label>
+          <label className="analysis-panel__check-wide">
+            <input
+              type="checkbox"
+              checked={partitionIfcElsets}
+              onChange={(e) => setPartitionIfcElsets(e.target.checked)}
+            />
+            IFC 부재별 ELSET (GlobalId → CalculiX, ifc_elset_map.json; 병합 메쉬·AABB 규칙)
+          </label>
         </div>
         <details className="analysis-panel__details">
           <summary>구조화 스펙 AnalysisInputV1 (선택)</summary>
@@ -473,7 +500,7 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
                 checked={analysisSpecMode === 'form'}
                 onChange={() => setAnalysisSpecMode('form')}
               />
-              폼 (케이스·노드력 행)
+              폼 (케이스·하중 행)
             </label>
             <label>
               <input
@@ -489,10 +516,15 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
             <>
               {builtAnalysisSpecObject ? null : (
                 <p className="analysis-panel__warn">
-                  케이스 id 가 비었거나 하중의 케이스 id 가 목록에 없으면 전송되지 않습니다.
+                  케이스 id 가 비었거나 하중의 케이스 id 가 목록에 없거나, 면압 p·틸트(0~90°)·명시 노드 ID 목록이
+                  잘못되면 전송되지 않습니다.
                 </p>
               )}
-              <AnalysisSpecForm model={analysisSpecForm} onChange={setAnalysisSpecForm} />
+              <AnalysisSpecForm
+                model={analysisSpecForm}
+                onChange={setAnalysisSpecForm}
+                meshNodeIdSample={meshNodeIdSample}
+              />
             </>
           ) : null}
           {analysisSpecMode === 'json' ? (
@@ -541,6 +573,16 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
                 step={0.01}
                 value={poisson}
                 onChange={(e) => setPoisson(Number(e.target.value))}
+              />
+            </label>
+            <label title="AnalysisInputV1 gravity 등 — 스펙에 material_density_kg_m3 없을 때">
+              density (kg/m³)
+              <input
+                type="number"
+                min={0.001}
+                step={100}
+                value={densityKgM3}
+                onChange={(e) => setDensityKgM3(Number(e.target.value))}
               />
             </label>
           </div>
@@ -630,7 +672,7 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
               {result.feResults.load_steps && result.feResults.load_steps.length > 1 ? (
                 <div className="analysis-panel__row analysis-panel__fe-step">
                   <label>
-                    케이스 스텝 (VTK·위 요약)
+                    케이스 스텝 (뷰어 오버랩·위 요약)
                     <select
                       value={selectedFeStepIndex}
                       onChange={(e) => setSelectedFeStepIndex(Number(e.target.value))}
@@ -646,7 +688,10 @@ export function AnalysisPanel({ ifcFile }: AnalysisPanelProps) {
                   </label>
                 </div>
               ) : null}
-              <FeResultsVtkView feResults={feResultsView} />
+              <p className="analysis-panel__fe-overlay-hint">
+                노드 필드(변위·응력 샘플)는 아래 <strong>모델 뷰</strong>에 <strong>점 구름</strong>으로 오버랩됩니다(INP
+                *NODE 좌표가 붙은 경우). 스텝 변경 시 뷰어 동기화.                 뷰어에서 <strong>변위 과장</strong>·<strong>점 크기 자동/수동</strong>으로 표시를 맞출 수 있습니다.
+              </p>
               <details>
                 <summary>전체 JSON</summary>
                 <pre>{JSON.stringify(result.feResults, null, 2)}</pre>

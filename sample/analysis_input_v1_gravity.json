@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "analysis_type": "static_linear",
+  "material_density_kg_m3": 7850,
+  "load_cases": [
+    { "id": "DEAD", "name": "자중", "category": "DEAD" }
+  ],
+  "supports": [
+    { "id": "fix_min_z", "selection": { "type": "min_z" }, "fixed_dofs": [1, 2, 3] }
+  ],
+  "loads": [
+    {
+      "type": "gravity",
+      "id": "G1",
+      "case_id": "DEAD",
+      "acceleration": [0, 0, -9.81]
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 
 | 파일 | 설명 |
 |------|------|
-| `simple_beam.ifc` | 직사각형 단면 200×300 mm, 경간 5 m (5000 mm, 대략 +X 방향) |
+| `simple_beam.ifc` | 직사각형 단면 200×300 mm, 경간 **2 m** (2000 mm) |
 | `simple_column.ifc` | 직사각형 단면 300×300 mm, 높이 1 m (1000 mm, +Z 방향) |
 | `ten_story_4columns_slab.ifc` | 10 `IfcBuildingStorey`, 전고 약 **1 m**(층고 0.1 m). 평면·단면·슬래브는 구 8×6 m / 3 m 층고 모델을 1/30 스케일. **OpenBIM_Deflect** Pset (`AppliedLoad_Z_N` 5000 N, `BoundaryMode` FIX_MIN_Z_LOAD_MAX_Z) 포함 |
 
@@ -14,6 +14,8 @@
 |------|------|
 | `analysis_input_v1_example.json` | 단일 하중 케이스 |
 | `analysis_input_v1_two_steps_example.json` | `load_cases` 2개 → CalculiX `*STEP` 2개, `fe_results.load_steps` |
+| `analysis_input_v1_with_combination.json` | `combinations[]` 로 ULS 등 추가 `*STEP`(선형 중첩) |
+| `analysis_input_v1_gravity.json` | `type: gravity` + `material_density_kg_m3` → C3D4 등가 절점하중 `*CLOAD` |
 
 ## 재생성 방법
 

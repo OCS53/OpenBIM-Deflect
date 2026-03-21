@@ -22,6 +22,7 @@ PIPELINE_ARTIFACT_NAMES: tuple[str, ...] = (
     "pipeline_report.json",
     "fe_results.json",
     "analysis_input.json",
+    "ifc_elset_map.json",
 )
 
 
@@ -92,6 +93,8 @@ def run_ifc_pipeline(
     boundary_mode: str | None = None,
     first_product_only: bool = False,
     analysis_spec: dict | None = None,
+    partition_ifc_elsets: bool = False,
+    density_kg_m3: float = 7850.0,
 ) -> PipelineResult:
     root = repo_root()
     script = root / "scripts" / "spike" / "pipeline_ifc_gmsh_ccx.py"
@@ -120,6 +123,8 @@ def run_ifc_pipeline(
         str(young),
         "--poisson",
         str(poisson),
+        "--density-kg-m3",
+        str(density_kg_m3),
         "--load-z",
         str(load_z),
     ]
@@ -128,6 +133,8 @@ def run_ifc_pipeline(
     cmd.extend(["--geometry-strategy", geometry_strategy])
     if first_product_only:
         cmd.append("--first-product-only")
+    if partition_ifc_elsets:
+        cmd.append("--partition-ifc-elsets")
     if boundary_mode:
         cmd.extend(["--boundary-mode", boundary_mode])
     if analysis_spec is not None:

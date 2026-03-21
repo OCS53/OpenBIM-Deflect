@@ -111,6 +111,8 @@ export interface PipelineQueryParams {
   mesh_size: number
   young: number
   poisson: number
+  /** C3D4 중력 등가 하중용 밀도 [kg/m³] (`analysis_spec` 에 material_density 없을 때) */
+  density_kg_m3: number
   load_z: number
   run_ccx: boolean
   geometry_strategy: GeometryStrategy
@@ -118,6 +120,8 @@ export interface PipelineQueryParams {
   boundary_mode?: BoundaryModeOption | null
   /** true 이면 구조 부재 중 첫 요소만 (단일 부재 검증) */
   first_product_only?: boolean
+  /** IFC GlobalId별 CalculiX ELSET + ifc_elset_map.json (병합 메쉬·AABB 규칙) */
+  partition_ifc_elsets?: boolean
   /**
    * AnalysisInputV1 JSON 문자열 (multipart `analysis_spec`). 빈 문자열·미지정이면 서버 기본 경계/하중.
    * @see docs/LOAD-MODEL-AND-INP.md

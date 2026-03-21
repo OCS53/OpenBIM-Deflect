@@ -71,11 +71,13 @@ async def create_pipeline_job(
     mesh_size: float = 0.25,
     young: float = 210_000.0,
     poisson: float = 0.3,
+    density_kg_m3: float = 7850.0,
     load_z: float = 10_000.0,
     run_ccx: bool = True,
     geometry_strategy: GeometryStrategy = "auto",
     boundary_mode: BoundaryMode | None = None,
     first_product_only: bool = False,
+    partition_ifc_elsets: bool = False,
 ) -> JobCreatedResponse:
     if not file.filename or not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="파일 이름은 .ifc 로 끝나야 합니다.")
@@ -118,11 +120,13 @@ async def create_pipeline_job(
             "mesh_size": mesh_size,
             "young": young,
             "poisson": poisson,
+            "density_kg_m3": density_kg_m3,
             "load_z": load_z,
             "run_ccx": run_ccx,
             "geometry_strategy": geometry_strategy,
             "boundary_mode": boundary_mode,
             "first_product_only": first_product_only,
+            "partition_ifc_elsets": partition_ifc_elsets,
             "analysis_spec_used": spec_dict is not None,
         },
     )
@@ -139,6 +143,8 @@ async def create_pipeline_job(
             boundary_mode=boundary_mode,
             first_product_only=first_product_only,
             analysis_spec=spec_dict,
+            partition_ifc_elsets=partition_ifc_elsets,
+            density_kg_m3=density_kg_m3,
         )
         merge_job_status(job_id, {"celery_task_id": async_result.id})
     except (OperationalError, RedisConnectionError, OSError) as e:

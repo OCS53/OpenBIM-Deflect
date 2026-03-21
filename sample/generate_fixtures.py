@@ -66,7 +66,7 @@ def _rectangle_profile(f: ifcopenshell.file, x_mm: float, y_mm: float) -> ifcope
 
 
 def write_simple_beam(path: Path) -> None:
-    """수평 방향(+X) 단순 보: 단면 200×300 mm, 경간 5000 mm (5 m, 프로젝트 길이 단위: mm)."""
+    """수평 방향(+X) 단순 보: 단면 200×300 mm, 경간 2000 mm (2 m, 프로젝트 길이 단위: mm)."""
     f = create_file()
     body_ctx, storey = _base_spatial_hierarchy(f)
 
@@ -77,7 +77,7 @@ def write_simple_beam(path: Path) -> None:
         f,
         context=body_ctx,
         profile=profile,
-        depth=5000.0,
+        depth=2000.0,
         placement_zx_axes=((0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
     )
     assign_representation(f, product=beam, representation=rep)

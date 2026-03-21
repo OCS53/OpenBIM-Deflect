@@ -42,6 +42,16 @@
             }
           },
           {
+            "name": "density_kg_m3",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 7850.0,
+              "title": "Density Kg M3"
+            }
+          },
+          {
             "name": "load_z",
             "in": "query",
             "required": false,
@@ -107,6 +117,16 @@
               "type": "boolean",
               "default": false,
               "title": "First Product Only"
+            }
+          },
+          {
+            "name": "partition_ifc_elsets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Partition Ifc Elsets"
             }
           }
         ],
@@ -226,6 +246,16 @@
             }
           },
           {
+            "name": "density_kg_m3",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "default": 7850.0,
+              "title": "Density Kg M3"
+            }
+          },
+          {
             "name": "load_z",
             "in": "query",
             "required": false,
@@ -291,6 +321,16 @@
               "type": "boolean",
               "default": false,
               "title": "First Product Only"
+            }
+          },
+          {
+            "name": "partition_ifc_elsets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Partition Ifc Elsets"
             }
           }
         ],

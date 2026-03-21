@@ -265,3 +265,10 @@
   color: #c4cad4;
   line-height: 1.5;
 }
+
+.analysis-panel__fe-overlay-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #9aa3b2;
+}

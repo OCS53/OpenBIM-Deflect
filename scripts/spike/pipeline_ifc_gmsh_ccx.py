@@ -43,6 +43,10 @@ from app.analysis.ccx_gmsh_write import (
     write_analysis_input_sidecar,
     write_ccx_inp_from_gmsh_session,
 )
+from app.analysis.ifc_elset_partition import (
+    axis_aligned_bbox_from_verts,
+    elset_name_for_global_id,
+)
 
 # Gmsh 요소 타입: 4 = 4-node tetrahedron (선형)
 GMSH_TET4 = 4
@@ -126,6 +130,20 @@ def read_openbim_deflect_hints(f: ifcopenshell.file) -> tuple[float | None, str 
                 bc_mode = s
         break
     return load_n, bc_mode
+
+
+def collect_ifc_product_partition(
+    products: Sequence[ifcopenshell.entity_instance],
+) -> list[tuple[str, str, tuple[float, float, float, float, float, float]]]:
+    """IFC 부재별 (CalculiX ELSET 이름, GlobalId, AABB6) — 병합 메쉬에서 요소 ELSET 분할용."""
+    out: list[tuple[str, str, tuple[float, float, float, float, float, float]]] = []
+    for p in products:
+        v, _ = ifc_product_triangulation(p)
+        bb = axis_aligned_bbox_from_verts(v)
+        gid = getattr(p, "GlobalId", None) or str(p.id())
+        ename = elset_name_for_global_id(str(gid))
+        out.append((ename, str(gid), bb))
+    return out
 
 
 def merge_structural_meshes(
@@ -278,6 +296,9 @@ def _gmsh_write_msh_and_ccx_inp(
     bc_mode: str,
     stats_out: dict[str, Any] | None = None,
     analysis_spec: dict[str, Any] | None = None,
+    ifc_product_partition: list[tuple[str, str, tuple[float, float, float, float, float, float]]]
+    | None = None,
+    density_kg_m3: float = 7850.0,
 ) -> None:
     msh_path.parent.mkdir(parents=True, exist_ok=True)
     if stats_out is not None:
@@ -292,6 +313,8 @@ def _gmsh_write_msh_and_ccx_inp(
         bc_mode=bc_mode,
         analysis_spec=analysis_spec,
         stats_out=stats_out,
+        ifc_product_partition=ifc_product_partition,
+        density_kg_m3=density_kg_m3,
     )
 
 
@@ -316,6 +339,9 @@ def gmsh_volume_mesh_write_msh_and_inp(
     geometry_strategy: str = "auto",
     bc_mode: str = "FIX_MIN_Z_LOAD_MAX_Z",
     analysis_spec: dict[str, Any] | None = None,
+    ifc_product_partition: list[tuple[str, str, tuple[float, float, float, float, float, float]]]
+    | None = None,
+    density_kg_m3: float = 7850.0,
 ) -> tuple[str, dict[str, Any]]:
     """
     STL -> (classifySurfaces 등) -> createGeometry -> 체적 메쉬 를 여러 전략으로 시도.
@@ -343,6 +369,8 @@ def gmsh_volume_mesh_write_msh_and_inp(
                 bc_mode=bc_mode,
                 analysis_spec=analysis_spec,
                 stats_out=mesh_stats,
+                ifc_product_partition=ifc_product_partition,
+                density_kg_m3=density_kg_m3,
             )
             return "occ_bbox_only", mesh_stats
         finally:
@@ -364,6 +392,8 @@ def gmsh_volume_mesh_write_msh_and_inp(
                 bc_mode=bc_mode,
                 analysis_spec=analysis_spec,
                 stats_out=mesh_stats,
+                ifc_product_partition=ifc_product_partition,
+                density_kg_m3=density_kg_m3,
             )
             return "occ_bbox_fast", mesh_stats
         except Exception as e:
@@ -392,6 +422,8 @@ def gmsh_volume_mesh_write_msh_and_inp(
                 bc_mode=bc_mode,
                 analysis_spec=analysis_spec,
                 stats_out=mesh_stats,
+                ifc_product_partition=ifc_product_partition,
+                density_kg_m3=density_kg_m3,
             )
             gmsh.finalize()
             return name, mesh_stats
@@ -413,6 +445,8 @@ def gmsh_volume_mesh_write_msh_and_inp(
                 bc_mode=bc_mode,
                 analysis_spec=analysis_spec,
                 stats_out=mesh_stats,
+                ifc_product_partition=ifc_product_partition,
+                density_kg_m3=density_kg_m3,
             )
             return "occ_bbox_fallback", mesh_stats
         finally:
@@ -492,6 +526,8 @@ def run_pipeline(
     first_product_only: bool = False,
     boundary_mode_cli: str | None = None,
     analysis_spec_path: Path | None = None,
+    partition_ifc_elsets: bool = False,
+    density_kg_m3: float = 7850.0,
 ) -> None:
     t_wall0 = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -537,6 +573,14 @@ def run_pipeline(
     )
     write_ascii_stl(stl_path, verts, faces, solid_name="MergedStructural")
 
+    ifc_partition: list[tuple[str, str, tuple[float, float, float, float, float, float]]] | None = None
+    if partition_ifc_elsets:
+        ifc_partition = collect_ifc_product_partition(products)
+        print(
+            f"   IFC ELSET partition: {len(ifc_partition)} product(s) → AABB centroid → ELSET (see ifc_elset_map.json)",
+            file=sys.stderr,
+        )
+
     print("2) STL -> Gmsh 3D mesh (strategy=%s) …" % geometry_strategy, msh_path)
     gmsh_used, mesh_stats = gmsh_volume_mesh_write_msh_and_inp(
         stl_path,
@@ -551,6 +595,8 @@ def run_pipeline(
         geometry_strategy=geometry_strategy,
         bc_mode=effective_bc,
         analysis_spec=analysis_spec,
+        ifc_product_partition=ifc_partition,
+        density_kg_m3=density_kg_m3,
     )
     metrics: dict[str, Any] = {
         **mesh_stats,
@@ -562,6 +608,7 @@ def run_pipeline(
         "ifc_load_from_pset": load_ifc is not None,
         "ifc_bc_from_pset": bc_ifc is not None,
         "analysis_input_v1": analysis_spec is not None,
+        "partition_ifc_elsets": bool(partition_ifc_elsets),
     }
 
     if run_ccx:
@@ -627,6 +674,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--poisson", type=float, default=0.3, help="포아송비")
     p.add_argument(
+        "--density-kg-m3",
+        type=float,
+        default=7850.0,
+        help="중력(AnalysisInputV1 gravity) 등가 C3D4 질량 환산용 밀도 [kg/m³] (스펙 material_density_kg_m3 가 없을 때)",
+    )
+    p.add_argument(
         "--load-z",
         type=float,
         default=10_000.0,
@@ -660,6 +713,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="AnalysisInputV1 JSON 경로 — 있으면 bc_mode·load-z 대신 구조화 하중·지지 (docs/LOAD-MODEL-AND-INP.md)",
     )
+    p.add_argument(
+        "--partition-ifc-elsets",
+        action="store_true",
+        help="IFC 부재별 GlobalId → CalculiX ELSET (병합 체적 메쉬에서 사면체 중심 vs 부재 AABB). ifc_elset_map.json 생성",
+    )
     return p.parse_args(argv)
 
 
@@ -679,6 +737,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         first_product_only=args.first_product_only,
         boundary_mode_cli=args.boundary_mode,
         analysis_spec_path=args.analysis_spec,
+        partition_ifc_elsets=args.partition_ifc_elsets,
+        density_kg_m3=args.density_kg_m3,
     )
 
 

@@ -1,5 +1,5 @@
 /**
- * 다중 *STEP 응답에서 선택한 케이스의 변위·응력을 VTK·요약에 쓰기 위한 뷰 모델.
+ * 다중 *STEP 응답에서 선택한 케이스의 변위·응력을 뷰어 오버랩·요약에 쓰기 위한 뷰 모델.
  * API 루트 필드는 마지막 스텝과 동일하지만, load_steps 가 있으면 인덱스로 덮어씁니다.
  */
 import type { FeResultsPayload } from '../api/types'

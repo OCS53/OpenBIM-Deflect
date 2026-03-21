@@ -47,11 +47,13 @@ async def analyze_ifc(
     mesh_size: float = 0.25,
     young: float = 210_000.0,
     poisson: float = 0.3,
+    density_kg_m3: float = 7850.0,
     load_z: float = 10_000.0,
     run_ccx: bool = True,
     geometry_strategy: GeometryStrategy = "auto",
     boundary_mode: BoundaryMode | None = None,
     first_product_only: bool = False,
+    partition_ifc_elsets: bool = False,
 ) -> AnalyzeResponse:
     if not file.filename or not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="파일 이름은 .ifc 로 끝나야 합니다.")
@@ -101,6 +103,8 @@ async def analyze_ifc(
                 boundary_mode=boundary_mode,
                 first_product_only=first_product_only,
                 analysis_spec=spec_dict,
+                partition_ifc_elsets=partition_ifc_elsets,
+                density_kg_m3=density_kg_m3,
             )
         except PipelineError as e:
             tail = (e.stderr or e.stdout or str(e))[-8000:]

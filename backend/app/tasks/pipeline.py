@@ -22,6 +22,8 @@ def run_ifc_pipeline_task(
     boundary_mode: str | None = None,
     first_product_only: bool = False,
     analysis_spec: dict | None = None,
+    partition_ifc_elsets: bool = False,
+    density_kg_m3: float = 7850.0,
 ) -> None:
     ifc_path = job_dir(job_id) / "input.ifc"
     if not ifc_path.is_file():
@@ -52,6 +54,8 @@ def run_ifc_pipeline_task(
             boundary_mode=boundary_mode,
             first_product_only=first_product_only,
             analysis_spec=analysis_spec,
+            partition_ifc_elsets=partition_ifc_elsets,
+            density_kg_m3=density_kg_m3,
         )
         tail = (result.stdout + "\n" + result.stderr)[-4000:] or None
         merge_job_status(

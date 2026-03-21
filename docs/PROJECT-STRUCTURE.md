@@ -12,7 +12,7 @@
 | **파이프라인 단위 모듈화** | IfcOpenShell / Gmsh / CalculiX(또는 FEniCS)는 각각 **독립 모듈**로 두고, 상위 **오케스트레이션**만 한곳에서 호출합니다. |
 | **동기 API vs 비동기 작업** | HTTP는 **작업 생성·상태 조회·결과 조회**에 집중하고, 무거운 연산은 **Celery 워커**(또는 동등한 큐)로 넘깁니다. |
 | **솔버는 프로세스/컨테이너 경계** | CalculiX는 **CLI 바이너리**로 두는 경우가 많아, Python에서는 **입출력 파일 생성 → 실행 → 결과 파싱** 레이어를 명확히 둡니다. |
-| **프론트는 표현층** | Three.js(IFC 미리보기·장면)와 VTK.js(해석 필드) 역할을 **폴더/컴포넌트** 수준에서 나눕니다. |
+| **프론트는 표현층** | Three.js(IFC + **해석 샘플 노드 포인트 오버랩**). (설계안) VTK.js는 풀 메쉬 필드용으로 문서에만 언급될 수 있음. |
 
 ---
 
@@ -59,7 +59,7 @@ OpenBIM-Deflect/
 │
 ├── sample/                     # MVP용 단일 부재 IFC 샘플
 │
-├── frontend/                   # React + Three.js + VTK.js
+├── frontend/                   # React + Three.js (IFC + FE 포인트 오버랩)
 │   ├── public/
 │   ├── src/
 │   │   ├── components/         # UI 패널, 레이아웃

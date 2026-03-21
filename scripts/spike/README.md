@@ -47,6 +47,7 @@ docker compose run --rm pipeline-spike \
 ```
 
 - **`--geometry-strategy`:** `auto`(기본), `stl_classify`, `stl_raw`, `occ_bbox` — `auto`는 bbox 우선(삼각형 수 무관), 실패 시 STL `classifySurfaces` 조합 후 bbox 폴백.
+- **`--partition-ifc-elsets`:** IFC 부재별 CalculiX ELSET + `ifc_elset_map.json` (병합 메쉬에서 사면체 중심 vs 부재 AABB; 로드맵 4단계 MVP).
 - 실행 후 **`pipeline_report.json`** 에 `gmsh_volume_strategy`, `elapsed_seconds`, `n_ifc_triangles`, `n_mesh_nodes`, `n_mesh_tets` 등이 기록됩니다.
 
 산출물 기본 디렉터리: `scripts/spike/_output/` (gitignore).  

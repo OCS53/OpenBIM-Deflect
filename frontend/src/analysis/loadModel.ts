@@ -5,11 +5,15 @@
  * ## 백엔드(`backend/app/analysis/load_spec_v1.py`)와의 관계
  *
  * - **서버가 검증·해석하는 것:** `static_linear`, `load_cases`, `supports`(현재 `min_z`만),
- *   `loads` 중 `nodal_force` + `rule`(max_z_single_node | min_z_single_node) 또는 `explicit`.
- * - **타입만 있고 서버 미구현:** `GravityLoadV1`, `SurfacePressureLoadV1`, 조합 `LoadCombinationV1`,
- *   지지의 `max_z_band` 등. 이들을 JSON에 넣으면 Pydantic extra 정책에 따라 무시되거나(ignore) 추후 버전에서 오류가 날 수 있음.
+ *   `loads` 중 `nodal_force` + `rule`(max_z_single_node | min_z_single_node) 또는 `explicit`,
+ *   그리고 `surface_pressure` + `selection.kind == 'exterior'`(외곽면 등가 절점하중, 선택 `normal_max_tilt_deg`),
+ *   선택 `combinations[]`(케이스별 계수 선형 중첩 → 추가 `*STEP`),
+ *   `gravity`(등가 절점하중) + 선택 최상위 `material_density_kg_m3`(없으면 API `density_kg_m3`).
+ * - **타입만 있고 서버 미구현:** 지지의 `max_z_band` 등.
+ *   이들을 JSON에 넣으면 Pydantic extra 정책에 따라 무시되거나(ignore) 추후 버전에서 오류가 날 수 있음.
  *
- * UI: `components/AnalysisSpecForm.tsx` 가 위 **구현된** 부분만 행 편집으로 채움. 나머지는 JSON 모드.
+ * UI: `components/AnalysisSpecForm.tsx` 폼에서 하중 케이스·조합·nodal_force·surface_pressure·gravity 행 편집;
+ * 그 외 타입은 JSON 모드.
  */
 
 export const ANALYSIS_INPUT_VERSION = 1 as const
@@ -32,7 +36,7 @@ export interface NodalForceLoadV1 {
   type: 'nodal_force'
   id: string
   case_id: string
-  /** Resolver 전: 규칙만. 후: 명시 id */
+  /** 규칙(max/min z 한 노드) 또는 명시 `node_ids`(메시 노드 태그) */
   target:
     | { mode: 'rule'; rule: 'max_z_single_node' | 'min_z_single_node' }
     | { mode: 'explicit'; node_ids: readonly number[] }
@@ -40,7 +44,7 @@ export interface NodalForceLoadV1 {
   components: Vec3
 }
 
-/** 백엔드 미구현 (로드맵 3단계 이후 Resolver·Emitter) */
+/** C3D4 체적 질량×가속도 → 등가 절점 `*CLOAD` (밀도는 `material_density_kg_m3` 또는 API `density_kg_m3`) */
 export interface GravityLoadV1 {
   type: 'gravity'
   id: string
@@ -49,7 +53,10 @@ export interface GravityLoadV1 {
   acceleration: Vec3
 }
 
-/** 백엔드 미구현 */
+/**
+ * `selection.kind == 'exterior'`: C3D4 외곽 삼각면에 등가 `*CLOAD`.
+ * `normal_max_tilt_deg`(선택): 법선과 전역 +Z 사이 각 θ에 대해 |θ−90°| ≤ 값인 면만 적용(수직 외벽 위주).
+ */
 export interface SurfacePressureLoadV1 {
   type: 'surface_pressure'
   id: string
@@ -69,11 +76,11 @@ export interface LoadCaseMetaV1 {
   category: string
 }
 
-/** 백엔드 미구현 */
+/** 선형 조합: 케이스별 `*CLOAD` 에 계수를 곱해 합산한 추가 `*STEP` */
 export interface LoadCombinationV1 {
   id: string
   name: string
-  /** case_id → 계수 */
+  /** load_cases 의 case_id → 계수 (Resolver 선형 중첩) */
   factors: Readonly<Record<string, number>>
 }
 
@@ -84,6 +91,8 @@ export interface AnalysisInputV1 {
   supports: readonly SupportRuleV1[]
   loads: readonly PrimaryLoadV1[]
   combinations?: readonly LoadCombinationV1[]
+  /** 중력 하중 시 밀도 [kg/m³]. 없으면 파이프라인 `density_kg_m3` 쿼리 기본값 */
+  material_density_kg_m3?: number
 }
 
 /** 스파이크 bc_mode 문자열과의 대응 (마이그레이션·프리셋용) */

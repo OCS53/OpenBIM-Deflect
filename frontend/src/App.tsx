@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import type { FeResultsPayload } from './api/types'
 import { AnalysisPanel } from './components/AnalysisPanel'
 import { IfcViewer } from './components/IfcViewer'
 import './App.css'
 
 function App() {
   const [ifcFile, setIfcFile] = useState<File | null>(null)
+  const [feResultsOverlay, setFeResultsOverlay] = useState<FeResultsPayload | null>(null)
 
   return (
     <div className="app">
@@ -16,9 +18,9 @@ function App() {
         </p>
       </header>
       <main className="app__main">
-        <AnalysisPanel ifcFile={ifcFile} />
+        <AnalysisPanel ifcFile={ifcFile} onFeResultsOverlay={setFeResultsOverlay} />
         <div className="app__viewer-wrap">
-          <IfcViewer onIfcFileReady={setIfcFile} />
+          <IfcViewer onIfcFileReady={setIfcFile} feResultsOverlay={feResultsOverlay} />
         </div>
       </main>
     </div>

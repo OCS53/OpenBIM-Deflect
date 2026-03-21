@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "analysis_type": "static_linear",
+  "load_cases": [
+    { "id": "LC1", "name": "dead", "category": "DEAD" },
+    { "id": "LC2", "name": "live", "category": "LIVE" }
+  ],
+  "supports": [
+    {
+      "id": "fix_min_z",
+      "selection": { "type": "min_z" },
+      "fixed_dofs": [1, 2, 3]
+    }
+  ],
+  "loads": [
+    {
+      "type": "nodal_force",
+      "id": "N1",
+      "case_id": "LC1",
+      "target": { "mode": "rule", "rule": "max_z_single_node" },
+      "components": [0, 0, -10000]
+    },
+    {
+      "type": "nodal_force",
+      "id": "N2",
+      "case_id": "LC2",
+      "target": { "mode": "rule", "rule": "max_z_single_node" },
+      "components": [0, 0, -5000]
+    }
+  ],
+  "combinations": [
+    {
+      "id": "ULS_1",
+      "name": "1.2 D + 1.6 L",
+      "factors": { "LC1": 1.2, "LC2": 1.6 }
+    }
+  ]
+}

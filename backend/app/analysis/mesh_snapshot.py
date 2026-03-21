@@ -16,6 +16,8 @@ class MeshSnapshot:
     nodes: tuple[MeshNode, ...]
     elem_tags: tuple[int, ...]
     elem_nodes_flat: tuple[int, ...]  # 4 * n_elem
+    """요소별 CalculiX ELSET 이름. None 이면 단일 EALL."""
+    elem_elset: tuple[str, ...] | None = None
 
     @classmethod
     def from_gmsh_session(cls, *, tet_element_type: int = 4) -> MeshSnapshot:
@@ -56,4 +58,5 @@ class MeshSnapshot:
             nodes=tuple(nodes),
             elem_tags=tuple(out_tags),
             elem_nodes_flat=tuple(out_nodes),
+            elem_elset=None,
         )

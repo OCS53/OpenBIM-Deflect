@@ -11,6 +11,7 @@ function buildQuery(params: PipelineQueryParams): string {
     mesh_size: String(params.mesh_size),
     young: String(params.young),
     poisson: String(params.poisson),
+    density_kg_m3: String(params.density_kg_m3),
     load_z: String(params.load_z),
     geometry_strategy: params.geometry_strategy,
   })
@@ -22,6 +23,9 @@ function buildQuery(params: PipelineQueryParams): string {
   }
   if (params.first_product_only) {
     q.set('first_product_only', 'true')
+  }
+  if (params.partition_ifc_elsets) {
+    q.set('partition_ifc_elsets', 'true')
   }
   return q.toString()
 }

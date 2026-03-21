@@ -14,7 +14,7 @@ CalculiX·Gmsh·IfcOpenShell이 **API·worker 이미지**에 포함되어 있으
 | GET | `/api/v1/jobs/{job_id}` | `pending` / `running` / `completed` / `failed` 조회 |
 | GET | `/api/v1/jobs/{job_id}/artifacts/{filename}` | 산출물 다운로드 (화이트리스트 파일명만) |
 
-`POST /api/v1/analyze` 및 `POST /api/v1/jobs` 공통 쿼리(선택): `mesh_size`, `young`, `poisson`, `load_z`, `run_ccx`, **`geometry_strategy`**, **`boundary_mode`**, **`first_product_only`**.  
+`POST /api/v1/analyze` 및 `POST /api/v1/jobs` 공통 쿼리(선택): `mesh_size`, `young`, `poisson`, `load_z`, `run_ccx`, **`geometry_strategy`**, **`boundary_mode`**, **`first_product_only`**, **`partition_ifc_elsets`** (IFC GlobalId별 ELSET·`ifc_elset_map.json`).  
 완료 응답의 **`pipeline_report`** 에 실제 Gmsh 전략(`gmsh_volume_strategy`)이 들어갑니다.  
 `run_ccx=true` 이고 FRD에 DISP/STRESS가 있으면 **`fe_results`**(변위·응력 요약, `fe_results.json` 과 동일)가 포함됩니다. 노드 상한은 **`FE_RESULTS_MAX_NODES`** (기본 2500).
 
