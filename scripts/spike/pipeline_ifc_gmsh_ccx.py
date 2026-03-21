@@ -4,13 +4,16 @@ IFC → 중간 형상(STL) → Gmsh(3D 테트 메쉬) → CalculiX 입력(.inp) 
 
 같은 Docker 이미지(pipeline-spike) 안에서 한 번에 돌릴 수 있는 **스파이크 뼈대**입니다.
 - 중간 형상: IfcOpenShell geom 삼각망을 ASCII STL로 덤프 (MVP에서 STEP/BREP로 바꿀 여지를 주석으로 남김)
-- Gmsh: STL merge 후 `classifySurfaces`(각도·reparam 조합) → `createGeometry` → 체적 메쉬를
-  **여러 단계**로 시도하고, `auto` 모드에서는 실패 시 **OCC 바운딩 박스**로 폴백합니다.
+- Gmsh: `auto` 는 **정점 AABB 체적**을 먼저 시도하고, 실패 시 STL merge·`classifySurfaces`(각도·reparam) →
+  `createGeometry` → 체적 메쉬를 **여러 단계**로 시도하며, 끝까지 실패하면 **OCC 바운딩 박스**로 폴백합니다.
 - STEP/BREP 직접 임포트는 CAD 커널 추가가 필요해 본 스크립트에서는 시도하지 않습니다(리포트에 명시).
 - CalculiX: Gmsh 3D 선형 사면체(TYPE=C3D4)만 *NODE / *ELEMENT 로 풀어 씀 (고차·다른 타입은 TODO)
 
 경계/하중은 **자동 휴리스틱**(최소 Z 노드 고정, 최대 Z 노드에 수직 하중)이라 실제 구조와 다를 수 있습니다.
 검증용·파이프라인 배선 확인 목적입니다.
+
+**길이 단위:** IfcOpenShell `USE_WORLD_COORDS` 삼각망은 일반적으로 **미터(SI)** 입니다(IFC가 mm여도 내부에서 m로 나오는 경우가 많음).
+`--mesh-size` 는 Gmsh 특성 길이 상한으로 **모델 좌표와 같은 단위**여야 합니다(예: m 스케일이면 `0.2`~`0.5`, 과거 기본값 `120`은 “120m 셀”로 거칠거나 혼동을 줌).
 """
 
 from __future__ import annotations
@@ -22,15 +25,30 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import ifcopenshell
 import ifcopenshell.geom
+import ifcopenshell.util.element as ElementUtil
 import gmsh
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_backend = _REPO_ROOT / "backend"
+if str(_backend) not in sys.path:
+    sys.path.insert(0, str(_backend))
+
+from app.analysis.ccx_gmsh_write import (
+    write_analysis_input_sidecar,
+    write_ccx_inp_from_gmsh_session,
+)
 
 # Gmsh 요소 타입: 4 = 4-node tetrahedron (선형)
 GMSH_TET4 = 4
+
+# auto: 과거에는 병합 삼각형이 ~256개를 넘으면 bbox 를 건너뛰고 classify 만 시도해
+# (ten_story 50부재 ≈600삼각형) 매우 느려질 수 있었음. 현재는 삼각형 수와 무관하게 bbox 를 먼저 시도.
 
 STRUCTURAL_IFC_CLASSES: tuple[str, ...] = (
     "IfcBeam",
@@ -38,6 +56,16 @@ STRUCTURAL_IFC_CLASSES: tuple[str, ...] = (
     "IfcMember",
     "IfcSlab",
     "IfcWall",
+)
+
+PSET_OPENBIM_DEFLECT = "OpenBIM_Deflect"
+PROP_LOAD_Z_N = "AppliedLoad_Z_N"
+PROP_BOUNDARY_MODE = "BoundaryMode"
+VALID_BC_MODES: tuple[str, ...] = (
+    "FIX_MIN_Z_LOAD_MAX_Z",
+    "FIX_MIN_Y_LOAD_MAX_Y",
+    "FIX_MIN_Z_LOAD_TOP_X",
+    "FIX_MIN_Z_LOAD_TOP_Y",
 )
 
 
@@ -53,6 +81,70 @@ def pick_first_structural_product(f: ifcopenshell.file) -> ifcopenshell.entity_i
     raise LookupError(
         f"IFC에 다음 타입 중 하나가 필요합니다: {', '.join(STRUCTURAL_IFC_CLASSES)}"
     )
+
+
+def collect_structural_products(f: ifcopenshell.file) -> list[ifcopenshell.entity_instance]:
+    """타입 순서대로 모든 구조 부재(중복 GlobalId 제외)."""
+    out: list[ifcopenshell.entity_instance] = []
+    seen: set[str] = set()
+    for cls in STRUCTURAL_IFC_CLASSES:
+        for p in f.by_type(cls):
+            gid = getattr(p, "GlobalId", None) or str(p.id())
+            if gid in seen:
+                continue
+            seen.add(gid)
+            out.append(p)
+    return out
+
+
+def read_openbim_deflect_hints(f: ifcopenshell.file) -> tuple[float | None, str | None]:
+    """IfcProject / IfcSite / IfcBuilding 의 Pset `OpenBIM_Deflect` 에서 하중·경계 힌트."""
+    load_n: float | None = None
+    bc_mode: str | None = None
+    roots: list[ifcopenshell.entity_instance] = []
+    roots.extend(f.by_type("IfcProject") or [])
+    roots.extend(f.by_type("IfcSite") or [])
+    roots.extend(f.by_type("IfcBuilding") or [])
+    for ent in roots:
+        try:
+            psets = ElementUtil.get_psets(ent)
+        except Exception:
+            continue
+        block = psets.get(PSET_OPENBIM_DEFLECT)
+        if not block:
+            continue
+        raw_l = block.get(PROP_LOAD_Z_N)
+        if raw_l is not None:
+            try:
+                load_n = float(raw_l)
+            except (TypeError, ValueError):
+                pass
+        raw_b = block.get(PROP_BOUNDARY_MODE)
+        if raw_b is not None:
+            s = str(raw_b).strip()
+            if s in VALID_BC_MODES:
+                bc_mode = s
+        break
+    return load_n, bc_mode
+
+
+def merge_structural_meshes(
+    products: Sequence[ifcopenshell.entity_instance],
+) -> tuple[tuple[float, ...], tuple[int, ...]]:
+    """여러 부재 삼각망을 단일 정점·면 목록으로 병합."""
+    if not products:
+        raise LookupError("병합할 구조 부재가 없습니다.")
+    all_v: list[float] = []
+    all_f: list[int] = []
+    off = 0
+    for p in products:
+        v, fc = ifc_product_triangulation(p)
+        nv = len(v) // 3
+        all_v.extend(v)
+        for i in range(0, len(fc), 3):
+            all_f.extend((fc[i] + off, fc[i + 1] + off, fc[i + 2] + off))
+        off += nv
+    return tuple(all_v), tuple(all_f)
 
 
 def ifc_product_triangulation(
@@ -165,6 +257,17 @@ def _stl_volume_attempts(geometry_strategy: str) -> list[tuple[str, object]]:
     raise ValueError(f"unknown geometry_strategy: {geometry_strategy}")
 
 
+def _capture_gmsh_volume_stats(stats_out: dict[str, Any]) -> None:
+    tags, _, _ = gmsh.model.mesh.getNodes()
+    stats_out["n_mesh_nodes"] = int(len(tags))
+    elem_types, elem_tags, _ = gmsh.model.mesh.getElements(dim=3)
+    n_tet = 0
+    for et, tgs in zip(elem_types, elem_tags):
+        if et == GMSH_TET4:
+            n_tet += len(tgs)
+    stats_out["n_mesh_tets"] = n_tet
+
+
 def _gmsh_write_msh_and_ccx_inp(
     msh_path: Path,
     inp_path: Path,
@@ -172,15 +275,23 @@ def _gmsh_write_msh_and_ccx_inp(
     young_pa: float,
     poisson: float,
     point_load_n: float,
+    bc_mode: str,
+    stats_out: dict[str, Any] | None = None,
+    analysis_spec: dict[str, Any] | None = None,
 ) -> None:
     msh_path.parent.mkdir(parents=True, exist_ok=True)
+    if stats_out is not None:
+        _capture_gmsh_volume_stats(stats_out)
     gmsh.write(str(msh_path))
     print("3) Gmsh mesh -> CalculiX .inp …", inp_path)
-    write_ccx_inp_from_gmsh_mesh(
+    write_ccx_inp_from_gmsh_session(
         inp_path,
         young_pa=young_pa,
         poisson=poisson,
         point_load_n=point_load_n,
+        bc_mode=bc_mode,
+        analysis_spec=analysis_spec,
+        stats_out=stats_out,
     )
 
 
@@ -194,6 +305,7 @@ def _gmsh_occ_bbox_volume_mesh(verts: Sequence[float]) -> None:
 def gmsh_volume_mesh_write_msh_and_inp(
     stl_path: Path,
     verts: Sequence[float],
+    faces: Sequence[int],
     msh_path: Path,
     inp_path: Path,
     *,
@@ -202,15 +314,18 @@ def gmsh_volume_mesh_write_msh_and_inp(
     poisson: float,
     point_load_n: float,
     geometry_strategy: str = "auto",
-) -> str:
+    bc_mode: str = "FIX_MIN_Z_LOAD_MAX_Z",
+    analysis_spec: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
     """
     STL -> (classifySurfaces 등) -> createGeometry -> 체적 메쉬 를 여러 전략으로 시도.
-    - auto: classify 각도들 -> raw merge -> 실패 시 OCC bbox
+    - auto: **정점 AABB 체적 메쉬를 항상 먼저** 시도(빠름). 실패 시 classify 각도들 → raw → OCC bbox 폴백
     - stl_classify / stl_raw: 해당 전략만 (실패 시 예외, bbox 없음)
     - occ_bbox: STL 생략, IFC 정점 bbox만
 
-    반환: 실제로 성공한 Gmsh 체적 전략 이름.
+    반환: (실제로 성공한 Gmsh 체적 전략 이름, 메쉬 통계 dict).
     """
+    mesh_stats: dict[str, Any] = {}
     allow_bbox_fallback = geometry_strategy in ("auto", "occ_bbox")
     attempts = _stl_volume_attempts(geometry_strategy)
 
@@ -220,9 +335,42 @@ def gmsh_volume_mesh_write_msh_and_inp(
             _gmsh_set_mesh_size(mesh_size)
             _gmsh_occ_bbox_volume_mesh(verts)
             _gmsh_write_msh_and_ccx_inp(
-                msh_path, inp_path, young_pa=young_pa, poisson=poisson, point_load_n=point_load_n
+                msh_path,
+                inp_path,
+                young_pa=young_pa,
+                poisson=poisson,
+                point_load_n=point_load_n,
+                bc_mode=bc_mode,
+                analysis_spec=analysis_spec,
+                stats_out=mesh_stats,
             )
-            return "occ_bbox_only"
+            return "occ_bbox_only", mesh_stats
+        finally:
+            gmsh.finalize()
+
+    # auto: 삼각형 개수와 무관하게 AABB 먼저(병합 STL은 삼각형이 조금만 많아도 classify 가 매우 느림)
+    if geometry_strategy == "auto":
+        n_tris = len(faces) // 3
+        gmsh.initialize()
+        try:
+            _gmsh_set_mesh_size(mesh_size)
+            _gmsh_occ_bbox_volume_mesh(verts)
+            _gmsh_write_msh_and_ccx_inp(
+                msh_path,
+                inp_path,
+                young_pa=young_pa,
+                poisson=poisson,
+                point_load_n=point_load_n,
+                bc_mode=bc_mode,
+                analysis_spec=analysis_spec,
+                stats_out=mesh_stats,
+            )
+            return "occ_bbox_fast", mesh_stats
+        except Exception as e:
+            print(
+                f"WARN Gmsh auto bbox-first (n_tris={n_tris}): {e}",
+                file=sys.stderr,
+            )
         finally:
             gmsh.finalize()
 
@@ -236,10 +384,17 @@ def gmsh_volume_mesh_write_msh_and_inp(
             gmsh.model.mesh.createGeometry()
             _gmsh_surface_loop_and_volume_mesh_3d()
             _gmsh_write_msh_and_ccx_inp(
-                msh_path, inp_path, young_pa=young_pa, poisson=poisson, point_load_n=point_load_n
+                msh_path,
+                inp_path,
+                young_pa=young_pa,
+                poisson=poisson,
+                point_load_n=point_load_n,
+                bc_mode=bc_mode,
+                analysis_spec=analysis_spec,
+                stats_out=mesh_stats,
             )
             gmsh.finalize()
-            return name
+            return name, mesh_stats
         except Exception as e:
             print(f"WARN Gmsh strategy [{name}]: {e}", file=sys.stderr)
             gmsh.finalize()
@@ -250,9 +405,16 @@ def gmsh_volume_mesh_write_msh_and_inp(
             _gmsh_set_mesh_size(mesh_size)
             _gmsh_occ_bbox_volume_mesh(verts)
             _gmsh_write_msh_and_ccx_inp(
-                msh_path, inp_path, young_pa=young_pa, poisson=poisson, point_load_n=point_load_n
+                msh_path,
+                inp_path,
+                young_pa=young_pa,
+                poisson=poisson,
+                point_load_n=point_load_n,
+                bc_mode=bc_mode,
+                analysis_spec=analysis_spec,
+                stats_out=mesh_stats,
             )
-            return "occ_bbox_fallback"
+            return "occ_bbox_fallback", mesh_stats
         finally:
             gmsh.finalize()
 
@@ -290,136 +452,14 @@ def write_ascii_stl(path: Path, verts: Sequence[float], faces: Sequence[int], *,
         fp.write(f"endsolid {safe}\n")
 
 
-def _ccx_data_lines_ints(ids: Sequence[int], *, max_per_line: int = 16) -> list[str]:
-    """CalculiX splitline: 한 줄에 max_per_line 개를 넘기지 않도록 쉼표 구분 행으로 나눔."""
-    rows: list[str] = []
-    chunk: list[str] = []
-    for x in ids:
-        chunk.append(str(int(x)))
-        if len(chunk) >= max_per_line:
-            rows.append(",".join(chunk))
-            chunk = []
-    if chunk:
-        rows.append(",".join(chunk))
-    return rows
-
-
-def _gmsh_volume_tet4_connectivity() -> tuple[list[int], list[int]]:
-    """현재 Gmsh 모델에서 3D 선형 사면체만 (태그, 노드4개씩 플랫)."""
-    elem_types, elem_tags, node_tags = gmsh.model.mesh.getElements(dim=3)
-    out_tags: list[int] = []
-    out_nodes: list[int] = []
-    for etype, tags, nodes in zip(elem_types, elem_tags, node_tags):
-        if etype != GMSH_TET4:
-            continue
-        n_elem = len(tags)
-        for e in range(n_elem):
-            out_tags.append(tags[e])
-            base = 4 * e
-            out_nodes.extend(
-                [nodes[base], nodes[base + 1], nodes[base + 2], nodes[base + 3]]
-            )
-    return out_tags, out_nodes
-
-
-def write_ccx_inp_from_gmsh_mesh(
-    inp_path: Path,
-    *,
-    young_pa: float,
-    poisson: float,
-    point_load_n: float,
-) -> None:
-    """
-    열린 Gmsh 세션에서 메쉬를 읽어 CalculiX .inp 작성 (C3D4만).
-    gmsh.initialize() 직후, mesh.generate(3)까지 끝난 상태에서 호출하고,
-    호출부에서 finalize() 전에 실행해야 합니다.
-    """
-    node_tags, coord, _ = gmsh.model.mesh.getNodes()
-    if len(node_tags) == 0:
-        raise RuntimeError("Gmsh: 노드가 없습니다.")
-
-    tags_list = [int(t) for t in node_tags]
-    coords = [float(c) for c in coord]
-    n_nodes = len(tags_list)
-    xs = coords[0::3]
-    ys = coords[1::3]
-    zs = coords[2::3]
-
-    elem_tags, elem_nodes = _gmsh_volume_tet4_connectivity()
-    if not elem_tags:
-        raise RuntimeError(
-            "Gmsh: 3D 선형 사면체(TYPE 4)가 없습니다. 메쉬 차수·알고리즘을 확인하세요."
-        )
-
-    z_min = min(zs)
-    z_max = max(zs)
-    dz = z_max - z_min
-    tol = max(dz * 1.0e-6, 1.0e-9)
-
-    fix_nodes = [tags_list[i] for i in range(n_nodes) if zs[i] <= z_min + tol]
-    if not fix_nodes:
-        fix_nodes = [tags_list[zs.index(z_min)]]
-
-    # 하중 노드: z 최대에 가장 가까운 노드 하나
-    load_node = tags_list[max(range(n_nodes), key=lambda i: zs[i])]
-
-    lines: list[str] = [
-        "*HEADING",
-        "OpenBIM-Deflect spike: auto IFC-STL-Gmsh-C3D4 (match --young/--load-z to model units)",
-        "*NODE",
-    ]
-    for i in range(n_nodes):
-        nid = tags_list[i]
-        lines.append(f"{nid:7d}, {xs[i]:.6e}, {ys[i]:.6e}, {zs[i]:.6e}")
-
-    lines.append("*ELEMENT, TYPE=C3D4, ELSET=EALL")
-    n_elem = len(elem_tags)
-    for e in range(n_elem):
-        tid = elem_tags[e]
-        b = 4 * e
-        n1, n2, n3, n4 = (
-            elem_nodes[b],
-            elem_nodes[b + 1],
-            elem_nodes[b + 2],
-            elem_nodes[b + 3],
-        )
-        lines.append(f"{tid:7d}, {n1:7d}, {n2:7d}, {n3:7d}, {n4:7d}")
-
-    fix_set = "FIXZMIN"
-    all_set = "NALL"
-    lines.append(f"*NSET,NSET={fix_set}")
-    lines.extend(_ccx_data_lines_ints(fix_nodes))
-    lines.append(f"*NSET,NSET={all_set}")
-    lines.extend(_ccx_data_lines_ints(tags_list))
-    lines.append("*MATERIAL, NAME=STEEL")
-    lines.append("*ELASTIC")
-    lines.append(f" {young_pa:.6e}, {poisson:.3f}")
-    lines.append("*SOLID SECTION, ELSET=EALL, MATERIAL=STEEL")
-    lines.append("*STEP")
-    lines.append("*STATIC")
-    lines.append("*BOUNDARY")
-    lines.append(f"{fix_set}, 1, 3, 0.0")
-    lines.append("*CLOAD")
-    lines.append(f"{load_node}, 3, {-point_load_n:.6e}")
-    lines.append(f"*NODE FILE, NSET={all_set}")
-    lines.append("U")
-    lines.append("*EL FILE, ELSET=EALL")
-    lines.append("S, NOE")
-    lines.append(f"*NODE PRINT, NSET={all_set}")
-    lines.append("U")
-    lines.append("*END STEP")
-
-    inp_path.parent.mkdir(parents=True, exist_ok=True)
-    inp_path.write_text("\n".join(lines) + "\n", encoding="ascii")
-
-
 def write_pipeline_report(
     out_dir: Path,
     *,
     geometry_strategy_requested: str,
     gmsh_volume_strategy: str,
+    metrics: dict[str, Any] | None = None,
 ) -> None:
-    report = {
+    report: dict[str, Any] = {
         "version": 1,
         "geometry_strategy_requested": geometry_strategy_requested,
         "gmsh_volume_strategy": gmsh_volume_strategy,
@@ -427,9 +467,12 @@ def write_pipeline_report(
         "step_brep_import": False,
         "notes": (
             "IFC BREP/STEP 직접 경로는 pythonocc 등 별도 커널이 있으면 추가 가능. "
-            "현재는 삼각망 STL + Gmsh classify/raw/bbox 입니다."
+            "현재는 삼각망 STL + Gmsh classify/raw/bbox 입니다. "
+            "IfcOpenShell 월드 좌표는 보통 m; mesh_size 는 동일 단위(예 0.25)."
         ),
     }
+    if metrics:
+        report.update(metrics)
     (out_dir / "pipeline_report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
@@ -446,37 +489,80 @@ def run_pipeline(
     point_load_n: float,
     run_ccx: bool,
     geometry_strategy: str = "auto",
+    first_product_only: bool = False,
+    boundary_mode_cli: str | None = None,
+    analysis_spec_path: Path | None = None,
 ) -> None:
+    t_wall0 = time.perf_counter()
     out_dir.mkdir(parents=True, exist_ok=True)
     stl_path = out_dir / "intermediate_from_ifc.stl"
     msh_path = out_dir / "volume_from_gmsh.msh"
     inp_path = out_dir / "model_from_pipeline.inp"
 
-    f = ifcopenshell.open(str(ifc_path))
-    product = pick_first_structural_product(f)
-    print("IFC product:", product.is_a(), "GlobalId:", product.GlobalId)
+    analysis_spec: dict[str, Any] | None = None
+    if analysis_spec_path is not None:
+        ap = Path(analysis_spec_path)
+        if ap.is_file():
+            analysis_spec = json.loads(ap.read_text(encoding="utf-8"))
+            write_analysis_input_sidecar(out_dir, analysis_spec)
 
-    verts, faces = ifc_product_triangulation(product)
-    print("1) IFC → STL …", stl_path)
-    ifc_product_to_stl(product, stl_path, verts, faces)
+    f = ifcopenshell.open(str(ifc_path))
+    load_ifc, bc_ifc = read_openbim_deflect_hints(f)
+    effective_load = load_ifc if load_ifc is not None else point_load_n
+    if boundary_mode_cli and boundary_mode_cli in VALID_BC_MODES:
+        effective_bc = boundary_mode_cli
+    elif bc_ifc:
+        effective_bc = bc_ifc
+    else:
+        effective_bc = "FIX_MIN_Z_LOAD_MAX_Z"
+
+    if first_product_only:
+        products = [pick_first_structural_product(f)]
+    else:
+        products = collect_structural_products(f)
+    if not products:
+        raise SystemExit(
+            f"IFC에 구조 부재가 없습니다: {', '.join(STRUCTURAL_IFC_CLASSES)}"
+        )
+
+    verts, faces = merge_structural_meshes(products)
+    n_tris = len(faces) // 3
+    n_verts = len(verts) // 3
+    labels = ",".join(f"{p.is_a()}:{getattr(p, 'GlobalId', '?')[:8]}" for p in products[:5])
+    if len(products) > 5:
+        labels += f",…(+{len(products) - 5})"
+    print(
+        f"1) IFC → STL … {len(products)} product(s) [{labels}] ({n_verts} verts, {n_tris} tris)",
+        stl_path,
+    )
+    write_ascii_stl(stl_path, verts, faces, solid_name="MergedStructural")
 
     print("2) STL -> Gmsh 3D mesh (strategy=%s) …" % geometry_strategy, msh_path)
-    gmsh_used = gmsh_volume_mesh_write_msh_and_inp(
+    gmsh_used, mesh_stats = gmsh_volume_mesh_write_msh_and_inp(
         stl_path,
         verts,
+        faces,
         msh_path,
         inp_path,
         mesh_size=mesh_size,
         young_pa=young_pa,
         poisson=poisson,
-        point_load_n=point_load_n,
+        point_load_n=effective_load,
         geometry_strategy=geometry_strategy,
+        bc_mode=effective_bc,
+        analysis_spec=analysis_spec,
     )
-    write_pipeline_report(
-        out_dir,
-        geometry_strategy_requested=geometry_strategy,
-        gmsh_volume_strategy=gmsh_used,
-    )
+    metrics: dict[str, Any] = {
+        **mesh_stats,
+        "n_ifc_triangles": n_tris,
+        "n_ifc_vertices": n_verts,
+        "n_structural_products": len(products),
+        "ifc_applied_load_z_n": effective_load,
+        "bc_mode": effective_bc,
+        "ifc_load_from_pset": load_ifc is not None,
+        "ifc_bc_from_pset": bc_ifc is not None,
+        "analysis_input_v1": analysis_spec is not None,
+    }
 
     if run_ccx:
         job = inp_path.stem
@@ -502,7 +588,14 @@ def run_pipeline(
             else:
                 print("WARN: ccx finished but .frd not found", file=sys.stderr)
 
-    print("pipeline skeleton: OK →", out_dir)
+    metrics["elapsed_seconds"] = round(time.perf_counter() - t_wall0, 3)
+    write_pipeline_report(
+        out_dir,
+        geometry_strategy_requested=geometry_strategy,
+        gmsh_volume_strategy=gmsh_used,
+        metrics=metrics,
+    )
+    print("pipeline skeleton: OK →", out_dir, f"({metrics['elapsed_seconds']} s)")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -522,8 +615,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--mesh-size",
         type=float,
-        default=120.0,
-        help="Gmsh 특성 길이 상한 (IFC/모델 길이 단위와 동일; sample/simple_beam.ifc 는 mm)",
+        default=0.25,
+        help="Gmsh 특성 길이 상한 (IfcOpenShell 월드 좌표와 동일 단위; 보통 m → 예: 0.2~0.5)",
     )
     # sample IFC 좌표가 mm일 때 흔한 조합: MPa, N, mm
     p.add_argument(
@@ -550,6 +643,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="auto",
         help="체적 메쉬: auto=classify+raw 후 bbox 폴백; stl_classify|stl_raw=bbox 없음; occ_bbox=STL 생략",
     )
+    p.add_argument(
+        "--first-product-only",
+        action="store_true",
+        help="구조 부재 중 첫 요소만 (이전 단일 부재 동작)",
+    )
+    p.add_argument(
+        "--boundary-mode",
+        choices=VALID_BC_MODES,
+        default=None,
+        help="IFC OpenBIM_Deflect 보다 우선하는 경계·하중 축 모드",
+    )
+    p.add_argument(
+        "--analysis-spec",
+        type=Path,
+        default=None,
+        help="AnalysisInputV1 JSON 경로 — 있으면 bc_mode·load-z 대신 구조화 하중·지지 (docs/LOAD-MODEL-AND-INP.md)",
+    )
     return p.parse_args(argv)
 
 
@@ -566,6 +676,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         point_load_n=args.load_z,
         run_ccx=args.run_ccx,
         geometry_strategy=args.geometry_strategy,
+        first_product_only=args.first_product_only,
+        boundary_mode_cli=args.boundary_mode,
+        analysis_spec_path=args.analysis_spec,
     )
 
 

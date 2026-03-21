@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import ValidationError
 
+from app.analysis.load_spec_v1 import AnalysisInputV1
 from app.schemas import AnalyzeResponse, ArtifactInfo
 from app.services.frd_extract import load_fe_results_payload
 from app.services.pipeline_runner import (
@@ -19,6 +22,12 @@ from app.services.pipeline_runner import (
 )
 
 GeometryStrategy = Literal["auto", "stl_classify", "stl_raw", "occ_bbox"]
+BoundaryMode = Literal[
+    "FIX_MIN_Z_LOAD_MAX_Z",
+    "FIX_MIN_Y_LOAD_MAX_Y",
+    "FIX_MIN_Z_LOAD_TOP_X",
+    "FIX_MIN_Z_LOAD_TOP_Y",
+]
 
 router = APIRouter()
 
@@ -31,12 +40,18 @@ def _ifc_header_ok(raw: bytes) -> bool:
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_ifc(
     file: UploadFile = File(..., description="IFC SPF (.ifc)"),
-    mesh_size: float = 120.0,
+    analysis_spec: str | None = Form(
+        default=None,
+        description="AnalysisInputV1 JSON 문자열 (선택, docs/LOAD-MODEL-AND-INP.md)",
+    ),
+    mesh_size: float = 0.25,
     young: float = 210_000.0,
     poisson: float = 0.3,
     load_z: float = 10_000.0,
     run_ccx: bool = True,
     geometry_strategy: GeometryStrategy = "auto",
+    boundary_mode: BoundaryMode | None = None,
+    first_product_only: bool = False,
 ) -> AnalyzeResponse:
     if not file.filename or not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="파일 이름은 .ifc 로 끝나야 합니다.")
@@ -49,6 +64,23 @@ async def analyze_ifc(
             status_code=400,
             detail="IFC STEP Physical File(ISO-10303-21)로 보이지 않습니다.",
         )
+    spec_dict: dict | None = None
+    if analysis_spec is not None and analysis_spec.strip():
+        try:
+            parsed = json.loads(analysis_spec)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"analysis_spec JSON 파싱 실패: {e}",
+            ) from e
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="analysis_spec 는 JSON 객체여야 합니다.")
+        try:
+            AnalysisInputV1.model_validate(parsed)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.errors()) from e
+        spec_dict = parsed
+
     job_id = uuid.uuid4().hex
     with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as tmp:
         tmp.write(raw)
@@ -66,6 +98,9 @@ async def analyze_ifc(
                 load_z=load_z,
                 run_ccx=run_ccx,
                 geometry_strategy=geometry_strategy,
+                boundary_mode=boundary_mode,
+                first_product_only=first_product_only,
+                analysis_spec=spec_dict,
             )
         except PipelineError as e:
             tail = (e.stderr or e.stdout or str(e))[-8000:]

@@ -4,7 +4,9 @@ import {
   Box3,
   Color,
   DirectionalLight,
+  GridHelper,
   Group,
+  type Material,
   type Mesh,
   Object3D,
   PerspectiveCamera,
@@ -38,6 +40,52 @@ function fitCameraToObject(
   controls.update()
 }
 
+function pickGridCellSize(maxDim: number): number {
+  if (maxDim < 10) return 0.5
+  if (maxDim < 25) return 1
+  if (maxDim < 60) return 2
+  return 5
+}
+
+function updateFloorGrid(
+  scene: Scene,
+  root: Group,
+  gridRef: { current: GridHelper | null },
+): { sizeX: number; sizeZ: number; cellSize: number } | null {
+  const box = new Box3().setFromObject(root)
+  const size = box.getSize(new Vector3())
+  const center = box.getCenter(new Vector3())
+  const floorY = box.min.y
+  const maxDim = Math.max(size.x, size.z) || 1
+  if (maxDim < 0.01) return null
+
+  const cellSize = pickGridCellSize(maxDim)
+  const rawSize = Math.max(size.x, size.z) * 1.3
+  const divisions = Math.max(2, Math.ceil(rawSize / cellSize))
+  const gridSize = divisions * cellSize
+
+  if (gridRef.current) {
+    scene.remove(gridRef.current)
+    gridRef.current.dispose()
+    gridRef.current = null
+  }
+  const grid = new GridHelper(gridSize, divisions, 0x444a54, 0x2a3038)
+  grid.position.set(center.x, floorY, center.z)
+  scene.add(grid)
+  gridRef.current = grid
+  return { sizeX: gridSize, sizeZ: gridSize, cellSize }
+}
+
+function setModelWireframe(model: Object3D, wireframe: boolean) {
+  const setWire = (m: Material | Material[]): void => {
+    if (Array.isArray(m)) m.forEach((mm) => setWire(mm))
+    else if (m && 'wireframe' in m) (m as Material & { wireframe: boolean }).wireframe = wireframe
+  }
+  model.traverse((obj) => {
+    if ('isMesh' in obj && obj.isMesh) setWire((obj as Mesh).material)
+  })
+}
+
 export interface IfcViewerProps {
   /** IFC가 뷰어에 성공적으로 로드될 때마다 호출 (API 업로드용 동일 파일 참조) */
   onIfcFileReady?: (file: File | null) => void
@@ -55,8 +103,11 @@ export function IfcViewer({ onIfcFileReady }: IfcViewerProps) {
     raf: number
   } | null>(null)
   const modelRef = useRef<IfcViewerMesh | null>(null)
+  const gridRef = useRef<GridHelper | null>(null)
   const [status, setStatus] = useState<string>('IFC 파일을 끌어다 놓거나 선택하세요.')
   const [busy, setBusy] = useState(false)
+  const [gridInfo, setGridInfo] = useState<{ sizeX: number; sizeZ: number; cellSize: number } | null>(null)
+  const [wireframe, setWireframe] = useState(false)
 
   useEffect(() => {
     const host = hostRef.current
@@ -140,10 +191,19 @@ export function IfcViewer({ onIfcFileReady }: IfcViewerProps) {
           ctx.root.remove(prev)
           prev.close()
           modelRef.current = null
+          if (gridRef.current) {
+            ctx.scene.remove(gridRef.current)
+            gridRef.current.dispose()
+            gridRef.current = null
+          }
+          setGridInfo(null)
         }
         const model = await ctx.loader.parse(buffer)
         ctx.root.add(model)
         modelRef.current = model
+        const info = updateFloorGrid(ctx.scene, ctx.root, gridRef)
+        setGridInfo(info)
+        setModelWireframe(model, wireframe)
         fitCameraToObject(ctx.camera, ctx.controls, ctx.root)
         setStatus(`표시 중: ${label}`)
         const f =
@@ -156,7 +216,7 @@ export function IfcViewer({ onIfcFileReady }: IfcViewerProps) {
         setBusy(false)
       }
     },
-    [onIfcFileReady],
+    [onIfcFileReady, wireframe],
   )
 
   const onDrop = useCallback(
@@ -183,10 +243,31 @@ export function IfcViewer({ onIfcFileReady }: IfcViewerProps) {
     [loadBuffer],
   )
 
+  const toggleWireframe = useCallback(() => {
+    const next = !wireframe
+    setWireframe(next)
+    const m = modelRef.current
+    if (m) setModelWireframe(m, next)
+  }, [wireframe])
+
   return (
     <div className="ifc-viewer">
       <div className="ifc-viewer__toolbar">
         <span className="ifc-viewer__status">{status}</span>
+        {gridInfo ? (
+          <span className="ifc-viewer__grid-label" title="바닥 격자 (미터법)">
+            격자 {gridInfo.sizeX.toFixed(1)}m × {gridInfo.sizeZ.toFixed(1)}m (1칸={gridInfo.cellSize}m)
+          </span>
+        ) : null}
+        <label className="ifc-viewer__checkbox">
+          <input
+            type="checkbox"
+            checked={wireframe}
+            onChange={toggleWireframe}
+            disabled={!gridInfo}
+          />
+          와이어프레임
+        </label>
         <label className={`ifc-viewer__file${busy ? ' ifc-viewer__file--disabled' : ''}`}>
           <input type="file" accept=".ifc" disabled={busy} onChange={onFileInput} />
           파일 선택

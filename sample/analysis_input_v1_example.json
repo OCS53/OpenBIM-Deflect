@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "analysis_type": "static_linear",
+  "load_cases": [
+    { "id": "LC1", "name": "dead", "category": "DEAD" }
+  ],
+  "supports": [
+    {
+      "id": "fix_min_z",
+      "selection": { "type": "min_z" },
+      "fixed_dofs": [1, 2, 3]
+    }
+  ],
+  "loads": [
+    {
+      "type": "nodal_force",
+      "id": "N1",
+      "case_id": "LC1",
+      "target": { "mode": "rule", "rule": "max_z_single_node" },
+      "components": [0, 0, -10000]
+    }
+  ]
+}

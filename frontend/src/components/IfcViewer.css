@@ -21,6 +21,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.ifc-viewer__grid-label {
+  font-size: 11px;
+  color: #8b95a5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ifc-viewer__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c4cad4;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .ifc-viewer__file {

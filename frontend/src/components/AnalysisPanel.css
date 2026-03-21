@@ -26,7 +26,8 @@
 }
 
 .analysis-panel input[type='text'],
-.analysis-panel select {
+.analysis-panel select,
+.analysis-panel textarea {
   background: #1e2229;
   border: 1px solid #3d4450;
   color: #e8eaef;
@@ -34,6 +35,22 @@
   padding: 6px 10px;
   font-size: 13px;
   min-width: 0;
+}
+
+.analysis-panel__textarea-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.analysis-panel__textarea {
+  width: 100%;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 8rem;
 }
 
 .analysis-panel__base {
@@ -125,9 +142,120 @@
   color: #a8b0bc;
 }
 
+.analysis-panel__spec-modes {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.analysis-panel__fe-step label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #c4cad4;
+}
+
+.analysis-panel__fe-step select {
+  min-width: 12rem;
+  background: #1e2229;
+  border: 1px solid #3d4450;
+  color: #e8eaef;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 .analysis-panel__status {
   font-size: 12px;
   color: #8b95a5;
+}
+
+.analysis-panel__elapsed {
+  font-size: 12px;
+  color: #7eb6ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-panel__hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.analysis-panel__hint--warn {
+  color: #c4a574;
+}
+
+.analysis-panel__fieldset {
+  margin: 12px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid #2f3640;
+  border-radius: 8px;
+  background: #161a20;
+}
+
+.analysis-panel__fieldset legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9aa3b2;
+}
+
+.analysis-panel__fieldset-row {
+  align-items: flex-end;
+}
+
+.analysis-panel__grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.analysis-panel__grow select {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.analysis-panel__fieldset-note {
+  margin: 6px 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6b7280;
+}
+
+.analysis-panel__check-wide {
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
+  max-width: 42rem;
+}
+
+.analysis-panel__details {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8b95a5;
+}
+
+.analysis-panel__details summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.analysis-panel__poll-hint {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e8a838;
+  background: #1e1a12;
+  border: 1px solid #5c4a28;
+  border-radius: 6px;
+}
+
+.analysis-panel__timeout-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .analysis-panel__fe-mag {

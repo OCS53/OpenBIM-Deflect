@@ -17,7 +17,7 @@
             "required": false,
             "schema": {
               "type": "number",
-              "default": 120.0,
+              "default": 0.25,
               "title": "Mesh Size"
             }
           },
@@ -75,6 +75,38 @@
               "type": "string",
               "default": "auto",
               "title": "Geometry Strategy"
+            }
+          },
+          {
+            "name": "boundary_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "FIX_MIN_Z_LOAD_MAX_Z",
+                    "FIX_MIN_Y_LOAD_MAX_Y",
+                    "FIX_MIN_Z_LOAD_TOP_X",
+                    "FIX_MIN_Z_LOAD_TOP_Y"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Boundary Mode"
+            }
+          },
+          {
+            "name": "first_product_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "First Product Only"
             }
           }
         ],
@@ -169,7 +201,7 @@
             "required": false,
             "schema": {
               "type": "number",
-              "default": 120.0,
+              "default": 0.25,
               "title": "Mesh Size"
             }
           },
@@ -227,6 +259,38 @@
               "type": "string",
               "default": "auto",
               "title": "Geometry Strategy"
+            }
+          },
+          {
+            "name": "boundary_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "FIX_MIN_Z_LOAD_MAX_Z",
+                    "FIX_MIN_Y_LOAD_MAX_Y",
+                    "FIX_MIN_Z_LOAD_TOP_X",
+                    "FIX_MIN_Z_LOAD_TOP_Y"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Boundary Mode"
+            }
+          },
+          {
+            "name": "first_product_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "First Product Only"
             }
           }
         ],
@@ -423,6 +487,18 @@
             "format": "binary",
             "title": "File",
             "description": "IFC SPF (.ifc)"
+          },
+          "analysis_spec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Spec",
+            "description": "AnalysisInputV1 JSON 문자열 (선택, docs/LOAD-MODEL-AND-INP.md)"
           }
         },
         "type": "object",
@@ -438,6 +514,18 @@
             "format": "binary",
             "title": "File",
             "description": "IFC SPF (.ifc)"
+          },
+          "analysis_spec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Spec",
+            "description": "AnalysisInputV1 JSON 문자열 (선택, docs/LOAD-MODEL-AND-INP.md)"
           }
         },
         "type": "object",
@@ -475,6 +563,49 @@
             },
             "type": "array",
             "title": "Uz"
+          },
+          "x": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X",
+            "description": "참조 형상 좌표 (CalculiX *NODE, fe_results 작성 시 inp에서 채움)"
+          },
+          "y": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
+          },
+          "z": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Z"
           }
         },
         "type": "object",
@@ -485,6 +616,105 @@
           "uz"
         ],
         "title": "FeDisplacementBlock"
+      },
+      "FeResultsLoadStep": {
+        "properties": {
+          "step_index": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Step Index"
+          },
+          "case_id": {
+            "type": "string",
+            "title": "Case Id",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "default": ""
+          },
+          "displacement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeDisplacementBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeStressBlock"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeResultsMagnitude"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "n_nodes_total_disp": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes Total Disp"
+          },
+          "n_nodes_total_stress": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes Total Stress"
+          },
+          "n_nodes_in_sample": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Nodes In Sample"
+          },
+          "downsample_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downsample Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "step_index"
+        ],
+        "title": "FeResultsLoadStep",
+        "description": "다중 *STEP FRD: 케이스별 변위·응력 샘플."
       },
       "FeResultsMagnitude": {
         "properties": {
@@ -542,6 +772,18 @@
               }
             ],
             "title": "Parse Error"
+          },
+          "n_steps_in_frd": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N Steps In Frd",
+            "description": "FRD 내 DISP/STRESS 블록 쌍이 2개 이상일 때 스텝 수"
           },
           "n_nodes_total_disp": {
             "anyOf": [
@@ -616,6 +858,21 @@
                 "type": "null"
               }
             ]
+          },
+          "load_steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FeResultsLoadStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Steps",
+            "description": "다중 CalculiX *STEP 일 때 케이스별 결과; 루트 displacement 등은 마지막 스텝"
           }
         },
         "type": "object",
@@ -844,7 +1101,31 @@
               }
             ],
             "title": "Celery Task Id",
-            "description": "실행 중인 경우 Celery task id"
+            "description": "큐에 넣은 뒤·실행 중 Celery task id"
+          },
+          "poll_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Hint",
+            "description": "pending/running 이 오래 지속될 때 원인 안내(예: worker 미기동)"
+          },
+          "analysis_spec_used": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Spec Used",
+            "description": "제출된 AnalysisInputV1(JSON)가 파이프라인에 전달됐는지 (산출물 analysis_input.json 참고)"
           }
         },
         "type": "object",

@@ -31,6 +31,11 @@ RUN set -eux; \
     gmsh --version | head -n 1; \
     python3 -c "import ifcopenshell, gmsh; print('ifcopenshell', ifcopenshell.version); print('gmsh module ok')"
 
+# 마운트 없이 이미지만 쓸 때: 스파이크가 `app.analysis` 를 임포트하므로 backend 앱 + pydantic 필요
+COPY backend/app /work/backend/app
+COPY scripts /work/scripts
+RUN python3 -m pip install --no-cache-dir "pydantic>=2,<3"
+
 WORKDIR /work
 
 # 기본: 저장소를 마운트한 뒤 toolcheck 실행 (compose에서 덮어쓸 수 있음)

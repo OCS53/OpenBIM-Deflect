@@ -14,11 +14,15 @@ CalculiX·Gmsh·IfcOpenShell이 **API·worker 이미지**에 포함되어 있으
 | GET | `/api/v1/jobs/{job_id}` | `pending` / `running` / `completed` / `failed` 조회 |
 | GET | `/api/v1/jobs/{job_id}/artifacts/{filename}` | 산출물 다운로드 (화이트리스트 파일명만) |
 
-`POST /api/v1/analyze` 및 `POST /api/v1/jobs` 공통 쿼리(선택): `mesh_size`, `young`, `poisson`, `load_z`, `run_ccx`, **`geometry_strategy`** (`auto` | `stl_classify` | `stl_raw` | `occ_bbox`).  
+`POST /api/v1/analyze` 및 `POST /api/v1/jobs` 공통 쿼리(선택): `mesh_size`, `young`, `poisson`, `load_z`, `run_ccx`, **`geometry_strategy`**, **`boundary_mode`**, **`first_product_only`**.  
 완료 응답의 **`pipeline_report`** 에 실제 Gmsh 전략(`gmsh_volume_strategy`)이 들어갑니다.  
 `run_ccx=true` 이고 FRD에 DISP/STRESS가 있으면 **`fe_results`**(변위·응력 요약, `fe_results.json` 과 동일)가 포함됩니다. 노드 상한은 **`FE_RESULTS_MAX_NODES`** (기본 2500).
 
-환경 변수: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` (기본 `redis://localhost:6379/0`).
+환경 변수:
+
+- `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND` (기본 `redis://localhost:6379/0`)
+- **`PIPELINE_TIMEOUT_SEC`**: 동기 `/analyze` 및 워커 내 subprocess 한도(초). 기본 **86400**(24h). `0`/`none`/`unlimited` = 무제한.
+- **`CELERY_TASK_TIME_LIMIT_SEC`**: Celery 하드 타임아웃(초). 기본 **86400**.
 
 전체 설명: [`docs/API.md`](../docs/API.md)
 
@@ -27,11 +31,12 @@ CalculiX·Gmsh·IfcOpenShell이 **API·worker 이미지**에 포함되어 있으
 ## Docker (저장소 루트)
 
 ```bash
-docker compose up --build api redis worker
+docker compose up --build api
 # OpenAPI: http://localhost:8000/docs
+# (compose 에서 api 가 redis·worker 에 depends_on — 비동기 /jobs 도 동일 명령으로 가능)
 ```
 
-동기 `/analyze` 만 쓸 때는 `docker compose up --build api` 로 Redis·worker 없이 가능합니다.
+동기 `/analyze` 만 쓰고 worker 를 띄우기 싫다면, 로컬에서 uvicorn 만 실행하거나 compose 를 커스텀하세요.
 
 소스 마운트 + `--reload` (비동기까지 쓰려면 worker·redis 포함):
 
@@ -48,7 +53,7 @@ cd backend && CELERY_BROKER_URL=redis://localhost:6379/0 celery -A app.celery_ap
 ## 예시 (curl)
 
 ```bash
-curl -sS -X POST "http://localhost:8000/api/v1/analyze?mesh_size=120&young=210000" \
+curl -sS -X POST "http://localhost:8000/api/v1/analyze?mesh_size=0.25&young=210000" \
   -F "file=@sample/simple_beam.ifc" | python3 -m json.tool
 ```
 

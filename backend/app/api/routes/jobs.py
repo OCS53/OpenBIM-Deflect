@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, cast
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from kombu.exceptions import OperationalError
+from pydantic import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
+from app.analysis.load_spec_v1 import AnalysisInputV1
 from app.schemas import ArtifactInfo, JobCreatedResponse, JobErrorDetail, JobStatusResponse
 from app.services.frd_extract import load_fe_results_payload
 from app.services.job_store import merge_job_status, read_job_status
@@ -16,6 +19,12 @@ from app.services.pipeline_runner import job_dir, list_artifact_files
 from app.tasks.pipeline import run_ifc_pipeline_task
 
 GeometryStrategy = Literal["auto", "stl_classify", "stl_raw", "occ_bbox"]
+BoundaryMode = Literal[
+    "FIX_MIN_Z_LOAD_MAX_Z",
+    "FIX_MIN_Y_LOAD_MAX_Y",
+    "FIX_MIN_Z_LOAD_TOP_X",
+    "FIX_MIN_Z_LOAD_TOP_Y",
+]
 
 router = APIRouter()
 
@@ -23,6 +32,23 @@ router = APIRouter()
 def _ifc_header_ok(raw: bytes) -> bool:
     head = raw[:160].lstrip()
     return head.startswith(b"ISO-10303-21") or head.startswith(b"HEADER")
+
+
+def _job_age_seconds(data: dict) -> float | None:
+    """job_status.json 의 ISO 타임스탬프로부터 경과 초."""
+    for key in ("updated_at", "created_at"):
+        raw = data.get(key)
+        if not isinstance(raw, str):
+            continue
+        try:
+            s = raw.replace("Z", "+00:00") if raw.endswith("Z") else raw
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - dt).total_seconds()
+        except ValueError:
+            continue
+    return None
 
 
 def _report_from_disk(out: Path) -> dict | None:
@@ -38,12 +64,18 @@ def _report_from_disk(out: Path) -> dict | None:
 @router.post("/jobs", response_model=JobCreatedResponse, status_code=202)
 async def create_pipeline_job(
     file: UploadFile = File(..., description="IFC SPF (.ifc)"),
-    mesh_size: float = 120.0,
+    analysis_spec: str | None = Form(
+        default=None,
+        description="AnalysisInputV1 JSON 문자열 (선택, docs/LOAD-MODEL-AND-INP.md)",
+    ),
+    mesh_size: float = 0.25,
     young: float = 210_000.0,
     poisson: float = 0.3,
     load_z: float = 10_000.0,
     run_ccx: bool = True,
     geometry_strategy: GeometryStrategy = "auto",
+    boundary_mode: BoundaryMode | None = None,
+    first_product_only: bool = False,
 ) -> JobCreatedResponse:
     if not file.filename or not file.filename.lower().endswith(".ifc"):
         raise HTTPException(status_code=400, detail="파일 이름은 .ifc 로 끝나야 합니다.")
@@ -56,6 +88,23 @@ async def create_pipeline_job(
             status_code=400,
             detail="IFC STEP Physical File(ISO-10303-21)로 보이지 않습니다.",
         )
+
+    spec_dict: dict | None = None
+    if analysis_spec is not None and analysis_spec.strip():
+        try:
+            parsed = json.loads(analysis_spec)
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"analysis_spec JSON 파싱 실패: {e}",
+            ) from e
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="analysis_spec 는 JSON 객체여야 합니다.")
+        try:
+            AnalysisInputV1.model_validate(parsed)
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=e.errors()) from e
+        spec_dict = parsed
 
     job_id = uuid.uuid4().hex
     out = job_dir(job_id)
@@ -72,11 +121,14 @@ async def create_pipeline_job(
             "load_z": load_z,
             "run_ccx": run_ccx,
             "geometry_strategy": geometry_strategy,
+            "boundary_mode": boundary_mode,
+            "first_product_only": first_product_only,
+            "analysis_spec_used": spec_dict is not None,
         },
     )
 
     try:
-        run_ifc_pipeline_task.delay(
+        async_result = run_ifc_pipeline_task.delay(
             job_id,
             mesh_size,
             young,
@@ -84,7 +136,11 @@ async def create_pipeline_job(
             load_z,
             run_ccx,
             geometry_strategy,
+            boundary_mode=boundary_mode,
+            first_product_only=first_product_only,
+            analysis_spec=spec_dict,
         )
+        merge_job_status(job_id, {"celery_task_id": async_result.id})
     except (OperationalError, RedisConnectionError, OSError) as e:
         merge_job_status(
             job_id,
@@ -153,6 +209,20 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
         pipeline_report = _report_from_disk(root)
         fe_results = load_fe_results_payload(root)
 
+    poll_hint: str | None = None
+    age = _job_age_seconds(data) if data else None
+    if status == "pending" and age is not None and age > 30.0:
+        poll_hint = (
+            "30초 넘게 대기(pending)입니다. Celery worker 컨테이너가 실행 중인지 확인하세요. "
+            "`docker compose up api` 는 redis·worker·api 를 함께 기동합니다. "
+            "동기 `POST /api/v1/analyze` 는 worker 없이 API 프로세스에서만 실행됩니다."
+        )
+    elif status == "running" and age is not None and age > 300.0:
+        poll_hint = (
+            "실행(running) 상태가 5분 넘게 지속됩니다. worker 로그·리소스를 확인하거나 "
+            "PIPELINE_TIMEOUT_SEC·CELERY_TASK_TIME_LIMIT_SEC 설정을 검토하세요."
+        )
+
     return JobStatusResponse(
         job_id=job_id,
         status=status,
@@ -162,4 +232,6 @@ async def get_job_status(job_id: str) -> JobStatusResponse:
         log_tail=data.get("log_tail"),
         error=error,
         celery_task_id=data.get("celery_task_id"),
+        poll_hint=poll_hint,
+        analysis_spec_used=data.get("analysis_spec_used"),
     )

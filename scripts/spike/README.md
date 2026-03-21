@@ -37,7 +37,7 @@ python3 scripts/spike/toolcheck.py
 
 1. IFC에서 첫 구조 부재(Beam/Column/…)를 고름  
 2. IfcOpenShell **geom 삼각망** → ASCII **STL** (`intermediate_from_ifc.stl`)  
-3. Gmsh에서 STL **createGeometry** → 체적 **3D 테트** → `volume_from_gmsh.msh` (삼각망이 닫힌 체로 분류되지 않으면 **축정렬 바운딩 박스 OCC** 로 폴백)  
+3. Gmsh에서 STL **createGeometry** → 체적 **3D 테트** → `volume_from_gmsh.msh` (`auto` 는 **항상 정점 AABB 체적을 먼저** 시도해 다중 `classifySurfaces` 를 피함; 실패 시 classify·raw·bbox 폴백)  
 4. 선형 사면체만 **C3D4**로 풀어 `model_from_pipeline.inp` 작성 (최소 Z 노드 고정·최대 Z 노드에 `-Z` 하중 휴리스틱)  
 5. 선택: `--run-ccx` 시 `ccx` 1회 후 `model_from_pipeline.frd`를 출력 폴더에 복사 (CalculiX 입력에 `*NODE FILE` / `*EL FILE` 이 포함되어 FRD에 DISP·STRESS 블록이 생김)  
 
@@ -46,11 +46,11 @@ docker compose run --rm pipeline-spike \
   python3 scripts/spike/pipeline_ifc_gmsh_ccx.py --ifc sample/simple_beam.ifc --run-ccx
 ```
 
-- **`--geometry-strategy`:** `auto`(기본), `stl_classify`, `stl_raw`, `occ_bbox` — Gmsh에서 STL 치유(`classifySurfaces`) 단계를 쌓은 뒤 `auto`는 bbox 폴백.
-- 실행 후 **`pipeline_report.json`** 에 실제 사용된 `gmsh_volume_strategy` 가 기록됩니다.
+- **`--geometry-strategy`:** `auto`(기본), `stl_classify`, `stl_raw`, `occ_bbox` — `auto`는 bbox 우선(삼각형 수 무관), 실패 시 STL `classifySurfaces` 조합 후 bbox 폴백.
+- 실행 후 **`pipeline_report.json`** 에 `gmsh_volume_strategy`, `elapsed_seconds`, `n_ifc_triangles`, `n_mesh_nodes`, `n_mesh_tets` 등이 기록됩니다.
 
 산출물 기본 디렉터리: `scripts/spike/_output/` (gitignore).  
-`sample/simple_beam.ifc` 좌표는 **mm** 스케일이므로 기본 `--young`은 **210000 (MPa)** 로 두었습니다. m 기반 모델이면 `--young 2.1e11` 등으로 맞추세요.
+IfcOpenShell **월드 좌표는 보통 m** 이므로 기본 `--mesh-size` 는 **0.25**(약 25 cm 셀 상한)입니다. 단위가 다르면 `mesh_size` 를 모델과 맞추세요. `--young` 기본 **210000** 은 mm–N–MPa 체계 관례와의 호환용이며, 해석 단위와 일치시키려면 [CalculiX 입력 주석](pipeline_ifc_gmsh_ccx.py)을 참고하세요.
 
 ### 뼈대 한계 (의도적)
 

@@ -2,6 +2,7 @@
 
 - **IFC 뷰어:** `web-ifc-three` + Three.js, 드래그앤드롭 / 파일 선택
 - **백엔드 연동:** `VITE_API_URL` 이 있으면 기본값으로 사용; 없으면 패널에 API base URL 입력
+- **분석 패널:** 하중 케이스(중력·풍/지진 등가 절점·레거시 Y축), `first_product_only`, `boundary_mode` / `mesh_size` 등을 쿼리로 전달 (MVP 스텁)
 
 ## 환경 변수
 

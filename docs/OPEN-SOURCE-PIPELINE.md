@@ -55,6 +55,8 @@ BIM 형상을 비교적 안정적으로 다루며, 솔리드 기반 워크플로
 
 프로젝트 README의 기본 스택은 **CalculiX**를 전제로 한 경우가 많으며, 난이도·유지보수에 따라 FEniCS를 보조 또는 연구 경로로 둘 수 있습니다.
 
+**하중 정의·INP 생성·UI 설계(연구):** 다중 하중·조합·면압으로 확장할 때의 **도메인 모델 / Resolver / Emitter** 분리와 CalculiX 키워드 매핑은 [`LOAD-MODEL-AND-INP.md`](./LOAD-MODEL-AND-INP.md) 를 참고하세요.
+
 ---
 
 ## 4. 시각화 (VTK.js / Three.js)

@@ -19,6 +19,9 @@ def run_ifc_pipeline_task(
     load_z: float,
     run_ccx: bool,
     geometry_strategy: str,
+    boundary_mode: str | None = None,
+    first_product_only: bool = False,
+    analysis_spec: dict | None = None,
 ) -> None:
     ifc_path = job_dir(job_id) / "input.ifc"
     if not ifc_path.is_file():
@@ -46,6 +49,9 @@ def run_ifc_pipeline_task(
             load_z=load_z,
             run_ccx=run_ccx,
             geometry_strategy=geometry_strategy,
+            boundary_mode=boundary_mode,
+            first_product_only=first_product_only,
+            analysis_spec=analysis_spec,
         )
         tail = (result.stdout + "\n" + result.stderr)[-4000:] or None
         merge_job_status(
@@ -59,6 +65,15 @@ def run_ifc_pipeline_task(
             {
                 "status": "failed",
                 "error": {"message": str(e), "log_tail": tail},
+            },
+        )
+        raise
+    except Exception as e:
+        merge_job_status(
+            job_id,
+            {
+                "status": "failed",
+                "error": {"message": f"워커 내부 오류: {e}", "log_tail": None},
             },
         )
         raise

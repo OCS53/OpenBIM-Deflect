@@ -1,0 +1,37 @@
+.fe-vtk {
+  margin-top: 12px;
+  border-top: 1px solid #2a3038;
+  padding-top: 10px;
+}
+
+.fe-vtk__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b95a5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.fe-vtk__canvas {
+  width: 100%;
+  height: 280px;
+  min-height: 200px;
+  border-radius: 6px;
+  background: #0a0c0f;
+  border: 1px solid #2a3038;
+}
+
+.fe-vtk--empty {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 12px;
+  background: #12151a;
+  border-radius: 6px;
+  border: 1px dashed #2a3038;
+}
+
+.fe-vtk--empty code {
+  font-size: 11px;
+  color: #a8b0bc;
+}

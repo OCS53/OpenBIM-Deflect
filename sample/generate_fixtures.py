@@ -2,7 +2,7 @@
 """MVP 검증용 IFC를 코드로 생성합니다.
 
 - 단일 IfcBeam / IfcColumn (기존)
-- 10층 × (기둥 4 + 슬래브 1) 모듈을 쌓은 간단 건물 (`ten_story_4columns_slab.ifc`)
+- 10층 × (기둥 4 + 슬래브 1) 모듈, 전고 약 1 m (`ten_story_4columns_slab.ifc`)
 
 실행 (저장소 루트에서 venv 사용 예):
 
@@ -26,6 +26,7 @@ from ifcopenshell.api.geometry import (
 )
 from ifcopenshell.api.profile import add_parameterized_profile
 from ifcopenshell.api.project import create_file
+from ifcopenshell.api.pset import add_pset, edit_pset
 from ifcopenshell.api.root import create_entity
 from ifcopenshell.api.spatial import assign_container
 from ifcopenshell.api.unit import assign_unit
@@ -65,7 +66,7 @@ def _rectangle_profile(f: ifcopenshell.file, x_mm: float, y_mm: float) -> ifcope
 
 
 def write_simple_beam(path: Path) -> None:
-    """수평 방향(+X) 단순 보: 단면 200×300 mm, 경간 4000 mm (프로젝트 길이 단위: mm)."""
+    """수평 방향(+X) 단순 보: 단면 200×300 mm, 경간 5000 mm (5 m, 프로젝트 길이 단위: mm)."""
     f = create_file()
     body_ctx, storey = _base_spatial_hierarchy(f)
 
@@ -76,7 +77,7 @@ def write_simple_beam(path: Path) -> None:
         f,
         context=body_ctx,
         profile=profile,
-        depth=4000.0,
+        depth=5000.0,
         placement_zx_axes=((0.0, 1.0, 0.0), (1.0, 0.0, 0.0)),
     )
     assign_representation(f, product=beam, representation=rep)
@@ -96,16 +97,19 @@ def _translate_matrix(x_m: float, y_m: float, z_m: float) -> np.ndarray:
 def write_ten_story_four_columns_slab(path: Path) -> None:
     """10층 건물: 각 층마다 직사각형 평면에 기둥 4개(모서리) + 수평 슬래브 1장.
 
-    - 층고 3 m, 평면 8 m × 6 m(기둥 중심 그리드), 기둥 400×400 mm, 슬래브 두께 200 mm
+    - 건물 전고 약 1 m(층고 0.1 m × 10). 구 형상 비율은 구버전(층고 3 m·평면 8×6 m)과 동일하게 스케일만 1/30.
     - 각 IfcBuildingStorey의 원점은 해당 층 바닥(세계 Z = (n-1)×층고)
     - 기둥은 층 내 +Z로 한 층 높이만 익스트루드, 슬래브는 층 상면(z=층고)에 둠
     """
-    storey_height_m = 3.0
     n_storeys = 10
-    span_x_m = 8.0
-    span_y_m = 6.0
-    col_mm = 400.0
-    slab_thickness_m = 0.2
+    total_height_m = 1.0
+    storey_height_m = total_height_m / n_storeys
+    # 구 참조(층고 3 m) 대비 비율 유지
+    linear_scale = storey_height_m / 3.0
+    span_x_m = 8.0 * linear_scale
+    span_y_m = 6.0 * linear_scale
+    col_mm = 400.0 * linear_scale
+    slab_thickness_m = 0.2 * linear_scale
 
     f = create_file()
     project = create_entity(f, ifc_class="IfcProject", name="OpenBIM-Deflect 10-Story Sample")
@@ -124,6 +128,13 @@ def write_ten_story_four_columns_slab(path: Path) -> None:
     building = create_entity(f, ifc_class="IfcBuilding", name="TenStoryBuilding")
     assign_object(f, products=[site], relating_object=project)
     assign_object(f, products=[building], relating_object=site)
+
+    # OpenBIM_Deflect Pset: 스파이크 파이프라인에서 하중·경계 힌트로 사용
+    pset = add_pset(f, building, "OpenBIM_Deflect")
+    edit_pset(f, pset, properties={
+        "AppliedLoad_Z_N": 5000.0,
+        "BoundaryMode": "FIX_MIN_Z_LOAD_MAX_Z",
+    })
 
     storeys: list[ifcopenshell.entity_instance] = []
     for i in range(n_storeys):
@@ -204,7 +215,7 @@ def write_ten_story_four_columns_slab(path: Path) -> None:
 
 
 def write_simple_column(path: Path) -> None:
-    """수직(+Z) 단순 기둥: 단면 300×300 mm, 높이 3000 mm."""
+    """수직(+Z) 단순 기둥: 단면 300×300 mm, 높이 1000 mm (1 m)."""
     f = create_file()
     body_ctx, storey = _base_spatial_hierarchy(f)
 
@@ -214,7 +225,7 @@ def write_simple_column(path: Path) -> None:
         f,
         context=body_ctx,
         profile=profile,
-        depth=3000.0,
+        depth=1000.0,
         placement_zx_axes=((0.0, 0.0, 1.0), (1.0, 0.0, 0.0)),
     )
     assign_representation(f, product=column, representation=rep)

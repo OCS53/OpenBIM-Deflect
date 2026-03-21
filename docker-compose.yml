@@ -9,6 +9,7 @@ services:
     ports:
       - "6379:6379"
 
+  # `docker compose up api` 만 해도 redis·worker 가 같이 뜹니다. worker 없으면 /jobs 작업이 pending 에서 끝나지 않습니다.
   api:
     build:
       context: .
@@ -21,10 +22,13 @@ services:
       JOB_DATA_DIR: /work/backend/data/jobs
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PIPELINE_TIMEOUT_SEC: "86400"
+      CELERY_TASK_TIME_LIMIT_SEC: "86400"
     volumes:
       - api_job_data:/work/backend/data
     depends_on:
       - redis
+      - worker
 
   worker:
     build:
@@ -38,6 +42,8 @@ services:
       JOB_DATA_DIR: /work/backend/data/jobs
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      PIPELINE_TIMEOUT_SEC: "86400"
+      CELERY_TASK_TIME_LIMIT_SEC: "86400"
     volumes:
       - api_job_data:/work/backend/data
     depends_on:

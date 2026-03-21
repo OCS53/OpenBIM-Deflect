@@ -52,8 +52,8 @@ def _von_mises(sxx: float, syy: float, szz: float, sxy: float, syz: float, szx: 
     )
 
 
-def _find_last_block_slice(lines: list[str], keyword: str) -> tuple[int, int] | None:
-    """`-4  KEYWORD` 부터 다음 단독 `-3` 줄까지(포함) 인덱스 구간. 없으면 None."""
+def _find_all_block_slices(lines: list[str], keyword: str) -> list[tuple[int, int]]:
+    """`-4  KEYWORD` 부터 다음 단독 `-3` 줄까지(포함) 인덱스 구간. FRD 내 순서 = *STEP 순서."""
     ranges: list[tuple[int, int]] = []
     i = 0
     n = len(lines)
@@ -70,9 +70,12 @@ def _find_last_block_slice(lines: list[str], keyword: str) -> tuple[int, int] | 
                 i += 1
             continue
         i += 1
-    if not ranges:
-        return None
-    return ranges[-1]
+    return ranges
+
+
+def _find_last_block_slice(lines: list[str], keyword: str) -> tuple[int, int] | None:
+    all_r = _find_all_block_slices(lines, keyword)
+    return all_r[-1] if all_r else None
 
 
 def _parse_disp_lines(block_lines: list[str]) -> dict[int, tuple[float, float, float]]:
@@ -109,56 +112,22 @@ def _downsample_indices(n: int, max_n: int) -> list[int]:
     return idxs
 
 
-def extract_frd_summary(frd_path: Path, *, max_nodes: int | None = None) -> dict[str, Any]:
-    """
-    FRD 를 읽어 컬럼형 필드 + 대표값을 담은 dict 반환.
-    DISP/STRESS 블록이 없으면 displacement/stress 는 None.
-    """
-    max_n = max_nodes if max_nodes is not None else _max_nodes()
-    if not frd_path.is_file():
-        return {
-            "version": 1,
-            "source": "calculix_frd",
-            "frd_basename": frd_path.name,
-            "parse_error": "frd 파일 없음",
-            "displacement": None,
-            "stress": None,
-            "magnitude": None,
-        }
-
-    text = frd_path.read_text(encoding="utf-8", errors="replace")
-    lines = text.splitlines()
-
-    disp_slice = _find_last_block_slice(lines, "DISP")
-    stress_slice = _find_last_block_slice(lines, "STRESS")
-
-    disp_d: dict[int, tuple[float, float, float]] = {}
-    stress_d: dict[int, tuple[float, float, float, float, float, float]] = {}
-
-    if disp_slice is not None:
-        disp_d = _parse_disp_lines(lines[disp_slice[0] : disp_slice[1] + 1])
-    if stress_slice is not None:
-        stress_d = _parse_stress_lines(lines[stress_slice[0] : stress_slice[1] + 1])
-
-    if not disp_d and not stress_d:
-        return {
-            "version": 1,
-            "source": "calculix_frd",
-            "frd_basename": frd_path.name,
-            "parse_error": "DISP/STRESS 노드 데이터를 찾지 못했습니다. *NODE FILE U 및 *EL FILE S 가 있는지 확인하세요.",
-            "displacement": None,
-            "stress": None,
-            "magnitude": None,
-        }
-
+def _pack_disp_stress_sample(
+    disp_d: dict[int, tuple[float, float, float]],
+    stress_d: dict[int, tuple[float, float, float, float, float, float]],
+    max_n: int,
+) -> dict[str, Any]:
+    """단일 DISP/STRESS 쌍 → API용 displacement·stress·magnitude·카운트."""
     if disp_d and stress_d:
         ordered_ids = sorted(set(disp_d) & set(stress_d))
         if not ordered_ids:
             ordered_ids = sorted(set(disp_d) | set(stress_d))
     elif disp_d:
         ordered_ids = sorted(disp_d.keys())
-    else:
+    elif stress_d:
         ordered_ids = sorted(stress_d.keys())
+    else:
+        ordered_ids = []
 
     sample_idx = _downsample_indices(len(ordered_ids), max_n)
     sampled_ids = [ordered_ids[i] for i in sample_idx]
@@ -220,26 +189,206 @@ def extract_frd_summary(frd_path: Path, *, max_nodes: int | None = None) -> dict
         downsample_note = f"노드 {len(ordered_ids)}개 중 {max_n}개만 균등 샘플링했습니다."
 
     return {
-        "version": 1,
-        "source": "calculix_frd",
-        "frd_basename": frd_path.name,
-        "parse_error": None,
-        "n_nodes_total_disp": len(disp_d),
-        "n_nodes_total_stress": len(stress_d),
-        "n_nodes_in_sample": len(sampled_ids),
-        "downsample_note": downsample_note,
         "displacement": disp_payload,
         "stress": stress_payload,
         "magnitude": {
             "max_abs_displacement": max_abs_u,
             "max_von_mises": max_vm,
         },
+        "n_nodes_total_disp": len(disp_d),
+        "n_nodes_total_stress": len(stress_d),
+        "n_nodes_in_sample": len(sampled_ids),
+        "downsample_note": downsample_note,
     }
 
 
-def write_fe_results_json(out_dir: Path, frd_basename: str = "model_from_pipeline.frd") -> dict[str, Any]:
+def extract_frd_summary(
+    frd_path: Path,
+    *,
+    max_nodes: int | None = None,
+    step_labels: list[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    """
+    FRD 를 읽어 컬럼형 필드 + 대표값을 담은 dict 반환.
+    다중 *STEP 이면 DISP/STRESS 블록을 순서대로 읽어 `load_steps` 에 넣고,
+    루트 `displacement`/`stress`/`magnitude` 는 **마지막 스텝** (기본 시각화·하위 호환).
+    """
+    max_n = max_nodes if max_nodes is not None else _max_nodes()
+    if not frd_path.is_file():
+        return {
+            "version": 1,
+            "source": "calculix_frd",
+            "frd_basename": frd_path.name,
+            "parse_error": "frd 파일 없음",
+            "displacement": None,
+            "stress": None,
+            "magnitude": None,
+        }
+
+    text = frd_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    disp_ranges = _find_all_block_slices(lines, "DISP")
+    stress_ranges = _find_all_block_slices(lines, "STRESS")
+
+    if not disp_ranges and not stress_ranges:
+        return {
+            "version": 1,
+            "source": "calculix_frd",
+            "frd_basename": frd_path.name,
+            "parse_error": "DISP/STRESS 노드 데이터를 찾지 못했습니다. *NODE FILE U 및 *EL FILE S 가 있는지 확인하세요.",
+            "displacement": None,
+            "stress": None,
+            "magnitude": None,
+        }
+
+    n_steps = max(len(disp_ranges), len(stress_ranges), 1)
+    multi = max(len(disp_ranges), len(stress_ranges)) > 1
+
+    if not multi:
+        disp_d: dict[int, tuple[float, float, float]] = {}
+        stress_d: dict[int, tuple[float, float, float, float, float, float]] = {}
+        if disp_ranges:
+            a, b = disp_ranges[-1]
+            disp_d = _parse_disp_lines(lines[a : b + 1])
+        if stress_ranges:
+            a, b = stress_ranges[-1]
+            stress_d = _parse_stress_lines(lines[a : b + 1])
+        if not disp_d and not stress_d:
+            return {
+                "version": 1,
+                "source": "calculix_frd",
+                "frd_basename": frd_path.name,
+                "parse_error": "DISP/STRESS 노드 데이터를 찾지 못했습니다. *NODE FILE U 및 *EL FILE S 가 있는지 확인하세요.",
+                "displacement": None,
+                "stress": None,
+                "magnitude": None,
+            }
+        packed = _pack_disp_stress_sample(disp_d, stress_d, max_n)
+        return {
+            "version": 1,
+            "source": "calculix_frd",
+            "frd_basename": frd_path.name,
+            "parse_error": None,
+            **packed,
+        }
+
+    load_steps: list[dict[str, Any]] = []
+    for si in range(n_steps):
+        disp_d = {}
+        if si < len(disp_ranges):
+            a, b = disp_ranges[si]
+            disp_d = _parse_disp_lines(lines[a : b + 1])
+        stress_d = {}
+        if si < len(stress_ranges):
+            a, b = stress_ranges[si]
+            stress_d = _parse_stress_lines(lines[a : b + 1])
+        packed = _pack_disp_stress_sample(disp_d, stress_d, max_n)
+        cid = step_labels[si][0] if step_labels and si < len(step_labels) else ""
+        nm = step_labels[si][1] if step_labels and si < len(step_labels) else ""
+        load_steps.append(
+            {
+                "step_index": si + 1,
+                "case_id": cid,
+                "name": nm,
+                **packed,
+            }
+        )
+
+    if not load_steps:
+        return {
+            "version": 1,
+            "source": "calculix_frd",
+            "frd_basename": frd_path.name,
+            "parse_error": "다중 STEP FRD 파싱 결과가 비었습니다.",
+            "displacement": None,
+            "stress": None,
+            "magnitude": None,
+        }
+
+    primary = load_steps[-1]
+    return {
+        "version": 1,
+        "source": "calculix_frd",
+        "frd_basename": frd_path.name,
+        "parse_error": None,
+        "n_steps_in_frd": len(load_steps),
+        "n_nodes_total_disp": primary["n_nodes_total_disp"],
+        "n_nodes_total_stress": primary["n_nodes_total_stress"],
+        "n_nodes_in_sample": primary["n_nodes_in_sample"],
+        "downsample_note": primary.get("downsample_note"),
+        "displacement": primary["displacement"],
+        "stress": primary["stress"],
+        "magnitude": primary["magnitude"],
+        "load_steps": load_steps,
+    }
+
+
+def _attach_xyz_to_displacement_block(disp: dict[str, Any], inp_path: Path) -> None:
+    """샘플된 displacement 블록에 INP *NODE 좌표(x,y,z) 부착."""
+    from app.services.ccx_inp_nodes import parse_ccx_inp_nodes
+
+    if not disp or not isinstance(disp, dict):
+        return
+    nids = disp.get("node_id")
+    if not isinstance(nids, list) or not nids:
+        return
+    coords = parse_ccx_inp_nodes(inp_path)
+    if not coords:
+        return
+    xs, ys, zs = [], [], []
+    for nid in nids:
+        t = coords.get(int(nid))
+        if t:
+            xs.append(t[0])
+            ys.append(t[1])
+            zs.append(t[2])
+        else:
+            xs.append(float("nan"))
+            ys.append(float("nan"))
+            zs.append(float("nan"))
+    if any(not math.isnan(x) for x in xs):
+        disp["x"] = xs
+        disp["y"] = ys
+        disp["z"] = zs
+
+
+def _attach_reference_positions(
+    summary: dict[str, Any],
+    inp_path: Path,
+) -> None:
+    """루트 및 load_steps[] 의 displacement 에 참조 좌표 부착."""
+    root = summary.get("displacement")
+    if isinstance(root, dict):
+        _attach_xyz_to_displacement_block(root, inp_path)
+    for step in summary.get("load_steps") or []:
+        if isinstance(step, dict):
+            d = step.get("displacement")
+            if isinstance(d, dict):
+                _attach_xyz_to_displacement_block(d, inp_path)
+
+
+def write_fe_results_json(
+    out_dir: Path,
+    frd_basename: str = "model_from_pipeline.frd",
+    inp_basename: str = "model_from_pipeline.inp",
+) -> dict[str, Any]:
     frd = out_dir / frd_basename
-    summary = extract_frd_summary(frd)
+    step_labels: list[tuple[str, str]] | None = None
+    ain = out_dir / "analysis_input.json"
+    if ain.is_file():
+        try:
+            from app.analysis.load_spec_v1 import AnalysisInputV1
+            from app.analysis.resolve_static_v1 import load_case_step_order_from_spec
+
+            spec = AnalysisInputV1.model_validate(json.loads(ain.read_text(encoding="utf-8")))
+            step_labels = load_case_step_order_from_spec(spec)
+        except Exception:
+            step_labels = None
+    summary = extract_frd_summary(frd, step_labels=step_labels)
+    inp = out_dir / inp_basename
+    if inp.is_file():
+        _attach_reference_positions(summary, inp)
     out_path = out_dir / "fe_results.json"
     out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return summary

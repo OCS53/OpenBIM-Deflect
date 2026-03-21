@@ -18,6 +18,12 @@ class FeDisplacementBlock(BaseModel):
     ux: list[float]
     uy: list[float]
     uz: list[float]
+    x: list[float] | None = Field(
+        default=None,
+        description="참조 형상 좌표 (CalculiX *NODE, fe_results 작성 시 inp에서 채움)",
+    )
+    y: list[float] | None = None
+    z: list[float] | None = None
 
 
 class FeStressBlock(BaseModel):
@@ -40,6 +46,23 @@ class FeResultsMagnitude(BaseModel):
     max_von_mises: float | None = None
 
 
+class FeResultsLoadStep(BaseModel):
+    """다중 *STEP FRD: 케이스별 변위·응력 샘플."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    step_index: int = Field(ge=1)
+    case_id: str = ""
+    name: str = ""
+    displacement: FeDisplacementBlock | None = None
+    stress: FeStressBlock | None = None
+    magnitude: FeResultsMagnitude | None = None
+    n_nodes_total_disp: int | None = None
+    n_nodes_total_stress: int | None = None
+    n_nodes_in_sample: int | None = None
+    downsample_note: str | None = None
+
+
 class FeResultsPayload(BaseModel):
     """`model_from_pipeline.frd` 에서 추출·다운샘플한 필드 (`fe_results.json` 과 동일 구조)."""
 
@@ -49,6 +72,10 @@ class FeResultsPayload(BaseModel):
     source: str = "calculix_frd"
     frd_basename: str = ""
     parse_error: str | None = None
+    n_steps_in_frd: int | None = Field(
+        default=None,
+        description="FRD 내 DISP/STRESS 블록 쌍이 2개 이상일 때 스텝 수",
+    )
     n_nodes_total_disp: int | None = None
     n_nodes_total_stress: int | None = None
     n_nodes_in_sample: int | None = None
@@ -56,6 +83,10 @@ class FeResultsPayload(BaseModel):
     displacement: FeDisplacementBlock | None = None
     stress: FeStressBlock | None = None
     magnitude: FeResultsMagnitude | None = None
+    load_steps: list[FeResultsLoadStep] | None = Field(
+        default=None,
+        description="다중 CalculiX *STEP 일 때 케이스별 결과; 루트 displacement 등은 마지막 스텝",
+    )
 
 
 class JobErrorDetail(BaseModel):
@@ -86,7 +117,15 @@ class JobStatusResponse(BaseModel):
     )
     log_tail: str | None = Field(default=None, description="마지막 표준출력 일부")
     error: JobErrorDetail | None = Field(default=None, description="실패 시 사유")
-    celery_task_id: str | None = Field(default=None, description="실행 중인 경우 Celery task id")
+    celery_task_id: str | None = Field(default=None, description="큐에 넣은 뒤·실행 중 Celery task id")
+    poll_hint: str | None = Field(
+        default=None,
+        description="pending/running 이 오래 지속될 때 원인 안내(예: worker 미기동)",
+    )
+    analysis_spec_used: bool | None = Field(
+        default=None,
+        description="제출된 AnalysisInputV1(JSON)가 파이프라인에 전달됐는지 (산출물 analysis_input.json 참고)",
+    )
 
 
 class AnalyzeResponse(BaseModel):

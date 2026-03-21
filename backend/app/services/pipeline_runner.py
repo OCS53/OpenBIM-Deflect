@@ -21,6 +21,7 @@ PIPELINE_ARTIFACT_NAMES: tuple[str, ...] = (
     "model_from_pipeline.frd",
     "pipeline_report.json",
     "fe_results.json",
+    "analysis_input.json",
 )
 
 
@@ -50,6 +51,25 @@ def job_dir(job_id: str) -> Path:
     return jobs_base_dir() / job_id
 
 
+def _subprocess_timeout_sec() -> int | None:
+    """파이프라인 스크립트 subprocess.run timeout. None = 무제한.
+
+    기본 86400초(24h). 예전 기본 3600(1h)은 대형 모델 동기 /analyze 가 끊기는 원인이었음.
+    `PIPELINE_TIMEOUT_SEC=0` / `none` / `unlimited` 는 무제한(서버·OS 한도만 적용).
+    """
+    raw = os.environ.get("PIPELINE_TIMEOUT_SEC")
+    if raw is None or not str(raw).strip():
+        return 86400
+    s = str(raw).strip().lower()
+    if s in ("0", "none", "unlimited", "inf"):
+        return None
+    try:
+        v = int(s)
+    except ValueError:
+        return 86400
+    return v if v > 0 else None
+
+
 @dataclass
 class PipelineResult:
     job_id: str
@@ -69,6 +89,9 @@ def run_ifc_pipeline(
     load_z: float,
     run_ccx: bool,
     geometry_strategy: str = "auto",
+    boundary_mode: str | None = None,
+    first_product_only: bool = False,
+    analysis_spec: dict | None = None,
 ) -> PipelineResult:
     root = repo_root()
     script = root / "scripts" / "spike" / "pipeline_ifc_gmsh_ccx.py"
@@ -78,7 +101,11 @@ def run_ifc_pipeline(
     out = job_dir(job_id)
     out.mkdir(parents=True, exist_ok=True)
     dest_ifc = out / "input.ifc"
-    shutil.copy2(source_ifc, dest_ifc)
+    try:
+        shutil.copy2(source_ifc, dest_ifc)
+    except shutil.SameFileError:
+        # 비동기 워커: 이미 job_dir/input.ifc 를 source 로 넘김
+        pass
 
     cmd: list[str] = [
         sys.executable,
@@ -99,14 +126,38 @@ def run_ifc_pipeline(
     if run_ccx:
         cmd.append("--run-ccx")
     cmd.extend(["--geometry-strategy", geometry_strategy])
+    if first_product_only:
+        cmd.append("--first-product-only")
+    if boundary_mode:
+        cmd.extend(["--boundary-mode", boundary_mode])
+    if analysis_spec is not None:
+        spec_path = out / "analysis_input.json"
+        spec_path.write_text(
+            json.dumps(analysis_spec, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        cmd.extend(["--analysis-spec", str(spec_path)])
 
-    proc = subprocess.run(
-        cmd,
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        timeout=int(os.environ.get("PIPELINE_TIMEOUT_SEC", "3600")),
-    )
+    timeout_sec = _subprocess_timeout_sec()
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired as e:
+        so = e.stdout if isinstance(getattr(e, "stdout", None), str) else ""
+        se = e.stderr if isinstance(getattr(e, "stderr", None), str) else ""
+        lim = f"{timeout_sec}s" if timeout_sec else "무제한(비정상)"
+        raise PipelineError(
+            "파이프라인 하위 프로세스 시간 초과 "
+            f"({lim}). PIPELINE_TIMEOUT_SEC 로 한도를 늘리거나, "
+            "장시간 연산은 동기 `/api/v1/analyze` 대신 `POST /api/v1/jobs` 비동기를 사용하세요.",
+            stdout=so or "",
+            stderr=se or "",
+        ) from e
     if proc.returncode != 0:
         raise PipelineError(
             f"파이프라인 종료 코드 {proc.returncode}",
@@ -123,7 +174,7 @@ def run_ifc_pipeline(
 
     try:
         write_fe_results_json(out)
-    except OSError:
+    except Exception:
         pass
 
     return PipelineResult(
