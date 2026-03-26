@@ -17,6 +17,11 @@
 - **클라우드 기반 FEA 연산:** 백엔드에서 자동으로 형상을 추출하고 메쉬를 생성하여 구조 해석(FEA)을 수행합니다.
 - **히트맵 시각화 (Heatmap Visualization):** 연산이 완료되면 휘어진(Deflected) 모습과 응력이 집중된 구간을 3D 컬러 히트맵으로 보여줍니다.
 
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/1b13aae2-6bc3-4d2a-becb-112a7e16ce4f" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d0631073-d648-49e1-adcf-0abe8f436f13" />
+
+
+
 ## 🛠️ 기술 스택 (Tech Stack)
 
 OpenBIM-Deflect는 최신 오픈소스 라이브러리들을 파이프라인으로 연결하여 구축되었습니다.
